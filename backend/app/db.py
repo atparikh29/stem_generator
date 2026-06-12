@@ -20,5 +20,9 @@ def init_db() -> None:
 
 
 def get_session() -> Iterator[Session]:
-    with Session(engine) as session:
+    # expire_on_commit=False so ORM objects keep their loaded attributes after a
+    # commit. The agent loop commits several times per request (append-only event
+    # log); without this the delivered ProblemRecord would be expired and
+    # serialize to {} in the API response.
+    with Session(engine, expire_on_commit=False) as session:
         yield session
