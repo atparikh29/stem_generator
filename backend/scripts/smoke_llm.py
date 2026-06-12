@@ -75,6 +75,10 @@ def main() -> None:
             if status == "accepted":
                 print(f"    -> ✓ ACCEPTED and delivered", flush=True)
             else:
+                # When the math was wrong, show what the verifier independently computed.
+                if ev.get("verifier_answer") is not None:
+                    print(f"    verifier computed: {ev['verifier_answer']}  (model claimed {ev['answer']})",
+                          flush=True)
                 print(f"    -> ✗ rejected {ev['failures']}"
                       + (f"  ({ev.get('detail','')[:90]})" if not ev.get('statement') else "")
                       + " — regenerating", flush=True)

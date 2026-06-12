@@ -117,6 +117,7 @@ def _verify_solve(task: MathTask, var: str) -> CheckResult:
         return CheckResult.fail(
             FailureCode.MATH_INVALID,
             f"claimed solutions {expected} != actual {actual}",
+            computed=", ".join(str(s) for s in actual),
         )
     return CheckResult.ok("solution set verified", solutions=[str(s) for s in actual])
 
@@ -143,6 +144,7 @@ def _verify_derivative(task: MathTask, var: str) -> CheckResult:
     return CheckResult.fail(
         FailureCode.MATH_INVALID,
         f"d/d{var}[{f}] = {sp.simplify(actual)} != claimed {claimed}",
+        computed=str(sp.simplify(actual)),
     )
 
 
@@ -161,6 +163,7 @@ def _verify_integral(task: MathTask, var: str) -> CheckResult:
     return CheckResult.fail(
         FailureCode.MATH_INVALID,
         f"integral = {sp.simplify(actual)} != claimed {claimed}",
+        computed=str(sp.simplify(actual)),
     )
 
 
@@ -175,7 +178,11 @@ def _verify_limit(task: MathTask, var: str) -> CheckResult:
         return CheckResult.fail(FailureCode.MATH_INVALID, "limit does not exist")
     if _equivalent(actual, claimed, var):
         return CheckResult.ok("limit verified", value=str(actual))
-    return CheckResult.fail(FailureCode.MATH_INVALID, f"limit = {actual} != claimed {claimed}")
+    return CheckResult.fail(
+        FailureCode.MATH_INVALID,
+        f"limit = {actual} != claimed {claimed}",
+        computed=str(actual),
+    )
 
 
 def _verify_simplify(task: MathTask, var: str) -> CheckResult:
@@ -184,4 +191,8 @@ def _verify_simplify(task: MathTask, var: str) -> CheckResult:
     rhs = parse_math(task.expected_answer, var)
     if _equivalent(lhs, rhs, var):
         return CheckResult.ok("expressions are equivalent")
-    return CheckResult.fail(FailureCode.MATH_INVALID, f"{lhs} is not equivalent to {rhs}")
+    return CheckResult.fail(
+        FailureCode.MATH_INVALID,
+        f"{lhs} is not equivalent to {rhs}",
+        computed=str(sp.simplify(lhs)),
+    )
