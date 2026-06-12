@@ -69,7 +69,9 @@ _PHYSICS_SPEC = {
     "impulse_momentum": 'givens keys MUST be {"F","t"} (N, s) to find impulse, OR {"m","v"} (kg, m/s) to find momentum. '
                         'unknown MUST be "impulse","momentum", or "dv".',
     "circular_motion": 'givens keys MUST be {"v","r"} (m/s, m) to find ac, OR {"m","v","r"} to find force. '
-                       'unknown MUST be "ac" or "force". Keep v < 100 m/s and r a few meters.',
+                       'unknown MUST be "ac" or "force". Keep v < 100 m/s and r a few meters, and use an '
+                       'everyday scenario that is realistic at those magnitudes (a ball on a string, a car '
+                       'on a curved road, a stone in a sling) — NOT a satellite or planetary orbit.',
 }
 
 _MATH_SPEC = {
@@ -107,7 +109,9 @@ def build_generation_prompt(spec: GenerationSpec) -> str:
         "REQUIRED: the statement must contain EVERY numeric value and unit from "
         "givens (a student must be able to solve it from the statement alone), and "
         "end with a clear 'Find/Determine ...' instruction. expected_answer must be "
-        "the correct, verifier-checkable answer."
+        "the correct, verifier-checkable answer. Choose a physically PLAUSIBLE "
+        "real-world scenario for the given magnitudes; if the context theme would be "
+        "unrealistic for these numbers, ignore the theme and pick a sensible one."
         f"{feedback}\n"
         "Return ONLY the JSON object."
     )

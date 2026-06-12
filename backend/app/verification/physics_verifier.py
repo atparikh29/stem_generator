@@ -218,14 +218,13 @@ def verify(task: PhysicsTask) -> CheckResult:
     cval = float(getattr(computed_in_target, "magnitude", computed_in_target))
     tval = float(getattr(target, "magnitude", target))
     tol = 1e-3 * max(1.0, abs(tval))
+    # Display in the target unit, compact form ("125000.0 N", not base units).
+    computed_disp = f"{computed_in_target:~}" if hasattr(computed_in_target, "units") else str(computed_in_target)
+    target_disp = f"{target:~}" if hasattr(target, "units") else str(target)
     if abs(cval - tval) <= tol:
-        return CheckResult.ok(
-            "physics answer verified",
-            computed=str(computed),
-            expected=str(target),
-        )
+        return CheckResult.ok("physics answer verified", computed=computed_disp, expected=target_disp)
     return CheckResult.fail(
         FailureCode.MATH_INVALID,
-        f"computed {computed} != expected {target}",
-        computed=str(computed),
+        f"computed {computed_disp} != expected {target_disp}",
+        computed=computed_disp,
     )
