@@ -70,3 +70,43 @@ def _dump(r: CheckResult) -> dict:
         "detail": r.detail,
         "data": r.data,
     }
+
+
+# Plain-language label per failure code (for humans reading the loop).
+_LABELS = {
+    "json_invalid": "Output didn't match the required JSON schema",
+    "math_invalid": "The claimed answer is mathematically wrong",
+    "nonunique_solution": "The equation has no single unique solution",
+    "unit_mismatch": "The answer's units are inconsistent",
+    "semantic_ambiguity": "The wording is unclear/ambiguous for a student",
+    "off_target_difficulty": "Difficulty doesn't match the requested level",
+}
+
+# Which check carries the detail for each failure code.
+_CHECK_FOR = {
+    "json_invalid": "translation",
+    "math_invalid": "core",
+    "nonunique_solution": "core",
+    "unit_mismatch": "core",
+    "off_target_difficulty": "difficulty",
+    "semantic_ambiguity": "semantic",
+}
+
+
+def explain(report: VerifierReport) -> list[dict]:
+    """Turn a report into per-failure, human-readable explanations.
+
+    Returns one entry per failure code: {code, label, detail}. The detail is the
+    specific reason from the responsible check (e.g. "computed 112.5 != claimed
+    1950", or "observed bin 3 != target 2").
+    """
+    out: list[dict] = []
+    for code in report.failure_reasons:
+        check = report.checks.get(_CHECK_FOR.get(code, ""), {})
+        detail = check.get("detail") or check.get("error") or ""
+        if code == "semantic_ambiguity":
+            amb = check.get("data", {}).get("ambiguity_score")
+            if amb is not None:
+                detail = f"{detail} (ambiguity score {amb})"
+        out.append({"code": code, "label": _LABELS.get(code, code), "detail": detail})
+    return out

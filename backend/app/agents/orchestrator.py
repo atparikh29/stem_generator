@@ -138,11 +138,11 @@ def generate_next_problem(
         failure_feedback = report.failure_reasons
         attempts.append({"attempt": attempt, "failures": failure_feedback})
         _log(session, student.id, "fail", {"attempt": attempt, "reasons": failure_feedback})
-        # The verifier's independently-computed answer (when the core check failed).
-        verifier_answer = (report.checks.get("core") or {}).get("data", {}).get("computed")
+        # Per-failure, human-readable explanations (includes the verifier's own
+        # computed answer inside the math_invalid detail).
         _emit(progress, status="rejected", attempt=attempt, failures=failure_feedback,
               statement=candidate.statement, answer=_answer_str(candidate.task),
-              verifier_answer=verifier_answer)
+              details=engine.explain(report))
 
     # Exhausted regenerations.
     _emit(progress, status="exhausted", failures=last_report.failure_reasons)

@@ -50,8 +50,15 @@ def main() -> None:
 
         print("\n--- (b) Deterministic verifier verdict ---")
         report = engine.verify(candidate, provider)
-        print("accepted       :", report.accepted)
-        print("failure_reasons:", report.failure_reasons)
+        print("accepted:", report.accepted)
+        if report.accepted:
+            print("all checks passed (math/units, difficulty, clarity)")
+        else:
+            print("rejected — reason(s):")
+            for e in engine.explain(report):
+                print(f"  • {e['code']}: {e['label']}")
+                if e["detail"]:
+                    print(f"      → {e['detail']}")
     except ValueError as exc:
         # A raw single call can legitimately fail schema validation -> json_invalid.
         # The full loop in (c) is what recovers from this; show it, don't crash.
@@ -75,13 +82,15 @@ def main() -> None:
             if status == "accepted":
                 print(f"    -> ✓ ACCEPTED and delivered", flush=True)
             else:
-                # When the math was wrong, show what the verifier independently computed.
-                if ev.get("verifier_answer") is not None:
-                    print(f"    verifier computed: {ev['verifier_answer']}  (model claimed {ev['answer']})",
-                          flush=True)
-                print(f"    -> ✗ rejected {ev['failures']}"
-                      + (f"  ({ev.get('detail','')[:90]})" if not ev.get('statement') else "")
-                      + " — regenerating", flush=True)
+                print(f"    -> ✗ rejected — reason(s):", flush=True)
+                for e in ev.get("details", []):
+                    line = f"       • {e['code']}: {e['label']}"
+                    print(line, flush=True)
+                    if e.get("detail"):
+                        print(f"           → {e['detail']}", flush=True)
+                if not ev.get("details"):  # json_invalid path has no candidate/report
+                    print(f"       • json_invalid: {ev.get('detail','')[:100]}", flush=True)
+                print("       regenerating…", flush=True)
         elif status == "exhausted":
             print(f"\n  budget exhausted; last failures {ev['failures']}", flush=True)
 
