@@ -40,6 +40,9 @@ def parse_math(expr: str, variable: str = "x") -> sp.Expr:
     """Parse a single expression using the restricted allow-list."""
     local = dict(_ALLOWED_FUNCS)
     local[variable] = sp.Symbol(variable, real=True)
+    # Models often write "^" for exponentiation; in Python/SymPy that's XOR. No
+    # STEM expression here means bitwise XOR, so normalize it to "**".
+    expr = expr.replace("^", "**")
     try:
         parsed = parse_expr(
             expr,
