@@ -1,0 +1,44 @@
+{
+  "contexts": [
+    {
+      "id": "generic",
+      "noun": "an object",
+      "narrative": "A neutral, textbook-style framing.",
+      "allowed_units": ["m", "m/s", "m/s**2", "s", "kg", "N", "J"],
+      "realism": {"max_speed_mps": 1000},
+      "interest_tags": ["general"]
+    },
+    {
+      "id": "skateboarding",
+      "noun": "a skateboarder",
+      "narrative": "Frame motion problems around a skateboarder on a ramp or flat ground.",
+      "allowed_units": ["m", "m/s", "m/s**2", "s", "kg", "N", "J"],
+      "realism": {"max_speed_mps": 30},
+      "interest_tags": ["sports", "skateboarding"]
+    },
+    {
+      "id": "basketball",
+      "noun": "a basketball",
+      "narrative": "Frame problems around shooting, passing, or dribbling a basketball.",
+      "allowed_units": ["m", "m/s", "m/s**2", "s", "kg", "N", "J"],
+      "realism": {"max_speed_mps": 40},
+      "interest_tags": ["sports", "basketball"]
+    },
+    {
+      "id": "space",
+      "noun": "a small satellite",
+      "narrative": "Frame problems around spacecraft, satellites, and orbits.",
+      "allowed_units": ["m", "m/s", "m/s**2", "s", "kg", "N", "J"],
+      "realism": {"max_speed_mps": 1000},
+      "interest_tags": ["space", "astronomy", "science"]
+    },
+    {
+      "id": "music",
+      "noun": "a vibrating guitar string",
+      "narrative": "Frame problems around instruments, waves, and rhythm.",
+      "allowed_units": ["m", "m/s", "m/s**2", "s", "kg", "N", "J"],
+      "realism": {"max_speed_mps": 100},
+      "interest_tags": ["music", "arts"]
+    }
+  ]
+}

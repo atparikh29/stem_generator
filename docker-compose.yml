@@ -1,0 +1,21 @@
+# Optional: Postgres for the event-log / paper runs. The app defaults to SQLite,
+# so this is only needed when you want the immutable log in Postgres.
+#
+#   docker compose up -d db
+#   # then in backend/.env:
+#   DATABASE_URL=postgresql+psycopg://stemgen:stemgen@localhost:5432/stemgen
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: stemgen
+      POSTGRES_PASSWORD: stemgen
+      POSTGRES_DB: stemgen
+    ports:
+      - "5432:5432"
+    volumes:
+      - stemgen_pgdata:/var/lib/postgresql/data
+
+volumes:
+  stemgen_pgdata:
