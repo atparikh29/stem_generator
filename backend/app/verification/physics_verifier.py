@@ -118,6 +118,40 @@ def _realism_violation(task: PhysicsTask) -> str | None:
     return None
 
 
+# LLMs label givens/unknowns with natural names; map them to each template's
+# canonical keys so a correct problem isn't falsely rejected on vocabulary alone.
+_ALIASES: dict[str, dict[str, str]] = {
+    "kinematics": {
+        "velocity": "v", "final_velocity": "v", "speed": "v",
+        "initial_velocity": "u", "v0": "u", "u0": "u", "vi": "u", "vf": "v",
+        "acceleration": "a", "time": "t", "displacement": "s", "distance": "s",
+    },
+    "newton_friction": {
+        "mass": "m", "force": "F_applied", "applied_force": "F_applied", "f": "F_applied",
+        "mu_k": "mu", "friction_coefficient": "mu", "coefficient_of_friction": "mu",
+        "acceleration": "a", "friction_force": "friction",
+    },
+    "work_energy": {
+        "force": "F", "distance": "d", "displacement": "d", "mass": "m",
+        "velocity": "v", "speed": "v", "kinetic_energy": "ke", "work_done": "work", "w": "work",
+    },
+    "impulse_momentum": {
+        "force": "F", "time": "t", "mass": "m", "velocity": "v", "speed": "v",
+        "change_in_velocity": "dv", "delta_v": "dv", "p": "momentum",
+    },
+    "circular_motion": {
+        "mass": "m", "velocity": "v", "speed": "v", "radius": "r",
+        "acceleration": "ac", "centripetal_acceleration": "ac", "a": "ac",
+        "force": "force", "centripetal_force": "force",
+    },
+}
+
+
+def _canon(template: str, name: str) -> str:
+    amap = _ALIASES.get(template, {})
+    return amap.get(name.strip().lower().replace(" ", "_"), name)
+
+
 def verify(task: PhysicsTask) -> CheckResult:
     solver = _TEMPLATES.get(task.template)
     if solver is None:
@@ -127,8 +161,12 @@ def verify(task: PhysicsTask) -> CheckResult:
     if realism:
         return CheckResult.fail(FailureCode.MATH_INVALID, f"realism: {realism}")
 
+    # Normalize natural field names to the template's canonical keys.
+    givens = {_canon(task.template, k): v for k, v in task.givens.items()}
+    unknown = _canon(task.template, task.unknown)
+
     try:
-        computed = solver(task.givens, task.unknown)
+        computed = solver(givens, unknown)
     except KeyError as exc:
         return CheckResult.fail(
             FailureCode.MATH_INVALID,

@@ -47,6 +47,33 @@ def test_newton_friction():
     assert physics_verifier.verify(task).passed
 
 
+def test_natural_field_names_are_normalized():
+    # LLMs say "velocity"/"radius"/"acceleration"; the template keys are v/r/ac.
+    # A correct answer must not be rejected just for vocabulary.
+    task = PhysicsTask(
+        template="circular_motion",
+        givens={"velocity": Quantity(value=500, unit="m/s"), "radius": Quantity(value=2000, unit="m")},
+        unknown="acceleration",
+        expected_answer=Quantity(value=125, unit="m/s**2"),
+    )
+    res = physics_verifier.verify(task)
+    assert res.passed
+    assert res.data.get("computed")
+
+
+def test_wrong_answer_exposes_computed_value():
+    task = PhysicsTask(
+        template="circular_motion",
+        givens={"velocity": Quantity(value=500, unit="m/s"), "radius": Quantity(value=2000, unit="m")},
+        unknown="acceleration",
+        expected_answer=Quantity(value=62.5, unit="m/s**2"),  # wrong; real answer 125
+    )
+    res = physics_verifier.verify(task)
+    assert not res.passed
+    assert FailureCode.MATH_INVALID in res.failures
+    assert res.data.get("computed")  # the verifier's own answer, for display
+
+
 def test_unrealistic_speed_rejected():
     task = _kinematics()
     task.givens["u"] = Quantity(value=5000, unit="m/s")
