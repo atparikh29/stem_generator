@@ -62,16 +62,24 @@ def main() -> None:
 
     def show(ev: dict) -> None:
         status = ev.get("status")
+        a = ev.get("attempt")
         if status == "plan":
             print(f"  plan: skill={ev['skill']} difficulty={ev['difficulty_target']}", flush=True)
         elif status == "generating":
-            print(f"  attempt {ev['attempt']}: generating… (calling the model)", flush=True)
-        elif status == "accepted":
-            print(f"  attempt {ev['attempt']}: ✓ ACCEPTED -> {ev['statement']}", flush=True)
-        elif status == "rejected":
-            print(f"  attempt {ev['attempt']}: ✗ rejected {ev['failures']} -> regenerating", flush=True)
+            print(f"\n  attempt {a}: generating… (calling the model)", flush=True)
+        elif status in ("accepted", "rejected"):
+            # Show what the model actually proposed, even when it gets rejected.
+            if ev.get("statement"):
+                print(f"    question: {ev['statement']}", flush=True)
+                print(f"    answer  : {ev['answer']}", flush=True)
+            if status == "accepted":
+                print(f"    -> ✓ ACCEPTED and delivered", flush=True)
+            else:
+                print(f"    -> ✗ rejected {ev['failures']}"
+                      + (f"  ({ev.get('detail','')[:90]})" if not ev.get('statement') else "")
+                      + " — regenerating", flush=True)
         elif status == "exhausted":
-            print(f"  budget exhausted; last failures {ev['failures']}", flush=True)
+            print(f"\n  budget exhausted; last failures {ev['failures']}", flush=True)
 
     student = Student(id="smoke", interests=["space"], skill_vector=assessor.initial_skill_vector())
     result = orchestrator.generate_next_problem(

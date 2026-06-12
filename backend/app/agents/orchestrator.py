@@ -50,6 +50,15 @@ def _emit(progress: Optional[Callable[[dict], None]], **info) -> None:
         progress(info)
 
 
+def _answer_str(task) -> str:
+    """A short, human-readable form of a candidate's claimed answer."""
+    d = task.model_dump()
+    if d.get("domain") == "physics":
+        ea = d.get("expected_answer", {})
+        return f"{ea.get('value')} {ea.get('unit', '')}".strip()
+    return str(d.get("expected_answer", ""))
+
+
 def generate_next_problem(
     student: Student,
     provider: LLMProvider,
@@ -103,7 +112,8 @@ def generate_next_problem(
         report = engine.verify(candidate, provider)
         last_report = report
         if report.accepted:
-            _emit(progress, status="accepted", attempt=attempt, statement=candidate.statement)
+            _emit(progress, status="accepted", attempt=attempt,
+                  statement=candidate.statement, answer=_answer_str(candidate.task))
             problem = ProblemRecord(
                 student_id=student.id,
                 domain=domain_of(skill).value,
@@ -128,7 +138,8 @@ def generate_next_problem(
         failure_feedback = report.failure_reasons
         attempts.append({"attempt": attempt, "failures": failure_feedback})
         _log(session, student.id, "fail", {"attempt": attempt, "reasons": failure_feedback})
-        _emit(progress, status="rejected", attempt=attempt, failures=failure_feedback)
+        _emit(progress, status="rejected", attempt=attempt, failures=failure_feedback,
+              statement=candidate.statement, answer=_answer_str(candidate.task))
 
     # Exhausted regenerations.
     _emit(progress, status="exhausted", failures=last_report.failure_reasons)
