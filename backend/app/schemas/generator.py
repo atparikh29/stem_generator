@@ -56,7 +56,8 @@ class GeneratorOutput(BaseModel):
 
     skill: str
     difficulty_target: int = Field(ge=1, le=5)
-    context_id: str = ""
+    # NB: the context/theme is chosen by the Context Selector and recorded by the
+    # orchestrator -- the LLM is NOT asked to echo it back (that was an error trap).
     # Natural-language problem statement shown to the student.
     statement: str
     # Worked / final solution shown after the student answers.

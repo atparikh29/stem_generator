@@ -22,7 +22,6 @@ schema:
 {
   "skill": str,
   "difficulty_target": int (1-5),
-  "context_id": str,
   "statement": str,            # the problem shown to the student
   "solution": str,             # worked solution shown after answering
   "task": {                    # machine-checkable spec
@@ -50,7 +49,7 @@ Rules:
 """
 
 FEWSHOT = """Example (skill=derivative_rules, difficulty_target=2):
-{"skill":"derivative_rules","difficulty_target":2,"context_id":"generic",
+{"skill":"derivative_rules","difficulty_target":2,
 "statement":"Find the derivative of f(x) = x^3 + 2x with respect to x.",
 "solution":"f'(x) = 3x^2 + 2.",
 "task":{"domain":"math","kind":"derivative","variable":"x",

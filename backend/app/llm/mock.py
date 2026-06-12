@@ -185,7 +185,6 @@ class MockProvider:
         return GeneratorOutput(
             skill=spec.skill,
             difficulty_target=target,
-            context_id=spec.context.get("id", ""),
             statement=statement,
             solution=solution,
             task=task,

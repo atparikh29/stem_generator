@@ -43,14 +43,20 @@ def main() -> None:
     )
 
     print("\n--- (a) Provider proposed a candidate ---")
-    candidate = provider.generate_problem(spec)
-    print("statement:", candidate.statement)
-    print("task     :", candidate.task.model_dump())
+    try:
+        candidate = provider.generate_problem(spec)
+        print("statement:", candidate.statement)
+        print("task     :", candidate.task.model_dump())
 
-    print("\n--- (b) Deterministic verifier verdict ---")
-    report = engine.verify(candidate, provider)
-    print("accepted       :", report.accepted)
-    print("failure_reasons:", report.failure_reasons)
+        print("\n--- (b) Deterministic verifier verdict ---")
+        report = engine.verify(candidate, provider)
+        print("accepted       :", report.accepted)
+        print("failure_reasons:", report.failure_reasons)
+    except ValueError as exc:
+        # A raw single call can legitimately fail schema validation -> json_invalid.
+        # The full loop in (c) is what recovers from this; show it, don't crash.
+        print("json_invalid on this raw attempt:", str(exc)[:140])
+        print("(this is expected for fallible models; the loop below handles it)")
 
     print("\n--- (c) Full regenerate-until-valid loop ---")
     student = Student(id="smoke", interests=["space"], skill_vector=assessor.initial_skill_vector())
