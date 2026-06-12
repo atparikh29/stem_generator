@@ -11,6 +11,7 @@ Failures map to FailureCode.UNIT_MISMATCH or FailureCode.MATH_INVALID.
 """
 from __future__ import annotations
 
+import re
 from typing import Callable
 
 from pint import DimensionalityError
@@ -147,9 +148,36 @@ _ALIASES: dict[str, dict[str, str]] = {
 }
 
 
+# Canonical keys each template's solver understands.
+_CANONICAL: dict[str, set[str]] = {
+    "kinematics": {"u", "v", "a", "t", "s"},
+    "newton_friction": {"m", "F_applied", "mu", "a", "friction"},
+    "work_energy": {"F", "d", "work", "m", "v", "ke"},
+    "impulse_momentum": {"F", "t", "impulse", "m", "v", "momentum", "dv"},
+    "circular_motion": {"m", "v", "r", "ac", "force"},
+}
+
+
+def _strip(s: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", s.lower())
+
+
 def _canon(template: str, name: str) -> str:
+    """Map a natural field name to the template's canonical key.
+
+    Tries, in order: the alias table; a separator-insensitive match against the
+    canonical keys (so "a_c"/"A-C" -> "ac"); a separator-insensitive alias match.
+    """
     amap = _ALIASES.get(template, {})
-    return amap.get(name.strip().lower().replace(" ", "_"), name)
+    norm = name.strip().lower().replace(" ", "_")
+    if norm in amap:
+        return amap[norm]
+    stripped = _strip(name)
+    for key in _CANONICAL.get(template, ()):
+        if _strip(key) == stripped:
+            return key
+    amap_stripped = {_strip(k): v for k, v in amap.items()}
+    return amap_stripped.get(stripped, name)
 
 
 def verify(task: PhysicsTask) -> CheckResult:
