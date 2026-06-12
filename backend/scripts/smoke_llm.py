@@ -31,6 +31,7 @@ def main() -> None:
     ap.add_argument("--skill", default="derivative_rules")
     ap.add_argument("--difficulty", type=int, default=2)
     ap.add_argument("--max-regen", type=int, default=8)
+    ap.add_argument("--hide-prompt", action="store_true", help="don't print the prompt sent to the model")
     args = ap.parse_args()
 
     provider = get_provider()
@@ -41,6 +42,14 @@ def main() -> None:
         difficulty_target=args.difficulty,
         context={"id": "generic", "noun": "an object"},
     )
+
+    if not args.hide_prompt:
+        from app.llm.prompt import SYSTEM_INSTRUCTION, build_generation_prompt
+
+        print("\n=== PROMPT SENT TO THE MODEL ===")
+        print("[system]\n" + SYSTEM_INSTRUCTION)
+        print("[user]\n" + build_generation_prompt(spec))
+        print("=== END PROMPT ===")
 
     print("\n--- (a) Provider proposed a candidate ---")
     try:
