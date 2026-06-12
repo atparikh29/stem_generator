@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from ..content.skills import domain_of
 from ..llm.base import GenerationSpec, LLMProvider
@@ -54,8 +54,18 @@ def generate_next_problem(
     skill_vector = student.skill_vector or {}
     _log(session, student.id, "observe", {"skill_vector": skill_vector})
 
-    # 3. Plan.
-    skill, difficulty_target = planner.plan(skill_vector)
+    # 3. Plan (skip recently-served skills so a wrong answer doesn't pin us).
+    recent_skills: list[str] = []
+    if session is not None:
+        recent_skills = list(
+            session.exec(
+                select(ProblemRecord.skill)
+                .where(ProblemRecord.student_id == student.id, ProblemRecord.status == "delivered")
+                .order_by(ProblemRecord.id.desc())
+                .limit(3)
+            ).all()
+        )
+    skill, difficulty_target = planner.plan(skill_vector, recent_skills)
     _log(session, student.id, "plan", {"skill": skill, "difficulty_target": difficulty_target})
 
     # 4. Context.

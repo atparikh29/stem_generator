@@ -12,6 +12,8 @@ regenerate-until-valid loop and the six failure codes.
 """
 from __future__ import annotations
 
+import random
+
 import sympy as sp
 
 from ..schemas.generator import GeneratorOutput, MathTask, PhysicsTask, Quantity
@@ -19,6 +21,7 @@ from ..verification import difficulty
 from .base import GenerationSpec
 
 X = sp.Symbol("x", real=True)
+_R = random.Random()  # unseeded: each generation varies the numbers
 
 
 def _math(kind, expression, expected, statement, solution, **kw):
@@ -27,105 +30,123 @@ def _math(kind, expression, expected, statement, solution, **kw):
 
 
 def _build_math(skill: str, k: int):
-    """Return (statement, solution, MathTask) for a math skill at knob k."""
+    """Return (statement, solution, MathTask) for a math skill at knob k.
+
+    The power/structure is governed by ``k`` (which sets difficulty); the free
+    coefficients are randomized so repeated calls for the same skill produce
+    different problems with correct, re-derived answers.
+    """
     if skill in ("derivative_rules", "tangent_line"):
-        f = X ** (k + 1) + k * X
+        c = _R.randint(1, 9)
+        f = X ** (k + 1) + c * X
         d = sp.diff(f, X)
         verb = "Find the slope of the tangent line function" if skill == "tangent_line" else "Find the derivative"
-        return _math("derivative", f"x**{k+1} + {k}*x", str(d),
-                     f"{verb} of f(x) = x^{k+1} + {k}x with respect to x.",
+        return _math("derivative", f"x**{k+1} + {c}*x", str(d),
+                     f"{verb} of f(x) = x^{k+1} + {c}x with respect to x.",
                      f"f'(x) = {d}")
     if skill == "limits":
-        a = k
+        a = _R.randint(1, 6)
         expr = f"(x**2 - {a*a})/(x - {a})"
         val = 2 * a
         return _math("limit", expr, str(val),
                      f"Evaluate the limit of (x^2 - {a*a})/(x - {a}) as x approaches {a}.",
                      f"Factor and cancel: limit = {val}.", point=float(a))
     if skill == "definite_integrals":
-        b = 2
+        b = _R.randint(2, 4)
         val = sp.Rational(b ** (k + 1), k + 1)
         return _math("integral", f"x**{k}", str(val),
                      f"Evaluate the definite integral of x^{k} from 0 to {b}.",
                      f"By the FTC, the integral equals {val}.", interval=[0.0, float(b)])
     if skill == "optimization":
-        # Critical point of f(x) = x^2 - 2k x  ->  f'(x) = 2x - 2k = 0  ->  x = k.
-        return _math("solve_equation", f"2*x - {2*k} = 0", str(k),
-                     f"A function has derivative f'(x) = 2x - {2*k}. Find the critical "
+        r = _R.randint(1, 9)  # critical point of f(x)=x^2-2r x  ->  f'(x)=2x-2r=0
+        return _math("solve_equation", f"2*x - {2*r} = 0", str(r),
+                     f"A function has derivative f'(x) = 2x - {2*r}. Find the critical "
                      f"point where f'(x) = 0.",
-                     f"Solve 2x - {2*k} = 0 to get x = {k}.")
+                     f"Solve 2x - {2*r} = 0 to get x = {r}.")
     if skill == "trig_equations":
         # Domain-restricted to [0, pi/2] for a unique solution.
-        return _math("solve_equation", "sin(x) = 1/2", "pi/6",
-                     "Solve sin(x) = 1/2 for x on the interval [0, pi/2].",
-                     "x = pi/6.", interval=[0.0, float(sp.pi / 2)])
+        rhs, sol = _R.choice([("1/2", "pi/6"), ("sqrt(2)/2", "pi/4"), ("sqrt(3)/2", "pi/3")])
+        return _math("solve_equation", f"sin(x) = {rhs}", sol,
+                     f"Solve sin(x) = {rhs} for x on the interval [0, pi/2].",
+                     f"x = {sol}.", interval=[0.0, float(sp.pi / 2)])
     if skill == "exp_log_equations":
-        c = k + 1
+        c = _R.randint(2, 9)
         return _math("solve_equation", f"exp(x) = {c}", f"log({c})",
                      f"Solve e^x = {c} for x. Express the answer exactly.",
                      f"x = ln({c}).")
     if skill == "trig_identities":
-        return _math("simplify", f"sin(x)**2 + cos(x)**2 + {k}", str(1 + k),
-                     f"Simplify sin^2(x) + cos^2(x) + {k}.",
-                     f"Using the Pythagorean identity, the expression equals {1 + k}.")
+        c = _R.randint(0, 9)
+        return _math("simplify", f"sin(x)**2 + cos(x)**2 + {c}", str(1 + c),
+                     f"Simplify sin^2(x) + cos^2(x) + {c}.",
+                     f"Using the Pythagorean identity, the expression equals {1 + c}.")
     if skill == "vectors":
-        a, b = 3, 4 * k
+        a, b = _R.randint(2, 8), _R.randint(2, 8)
         mag = sp.sqrt(a * a + b * b)
         return _math("simplify", f"sqrt({a}**2 + {b}**2)", str(mag),
                      f"Find the magnitude of the vector <{a}, {b}>.",
                      f"|v| = sqrt({a}^2 + {b}^2) = {mag}.")
     if skill == "function_transformations":
-        expr = sp.expand((X + k) ** 2)
-        return _math("simplify", f"(x + {k})**2", str(expr),
-                     f"Expand (x + {k})^2.",
-                     f"(x + {k})^2 = {expr}.")
+        c = _R.randint(1, 9)
+        expr = sp.expand((X + c) ** 2)
+        return _math("simplify", f"(x + {c})**2", str(expr),
+                     f"Expand (x + {c})^2.",
+                     f"(x + {c})^2 = {expr}.")
     raise ValueError(f"no math builder for skill {skill}")
 
 
 def _build_physics(skill: str, context: dict):
-    """Return (statement, solution, PhysicsTask) for a physics skill."""
+    """Return (statement, solution, PhysicsTask) for a physics skill.
+
+    Parameters are randomized within realistic ranges; answers are recomputed so
+    they stay correct."""
     flavor = context.get("noun", "an object")
     if skill == "kinematics":
-        givens = {"u": Quantity(value=5, unit="m/s"), "a": Quantity(value=2, unit="m/s**2"),
-                  "t": Quantity(value=3, unit="s")}
-        v = 5 + 2 * 3
+        u, a, t = _R.randint(0, 10), _R.randint(1, 5), _R.randint(2, 6)
+        givens = {"u": Quantity(value=u, unit="m/s"), "a": Quantity(value=a, unit="m/s**2"),
+                  "t": Quantity(value=t, unit="s")}
+        v = u + a * t
         task = PhysicsTask(template="kinematics", givens=givens, unknown="v",
                            expected_answer=Quantity(value=v, unit="m/s"))
-        st = (f"{flavor} starts at 5 m/s and accelerates at 2 m/s^2 for 3 s. "
+        st = (f"{flavor} starts at {u} m/s and accelerates at {a} m/s^2 for {t} s. "
               "Find its final velocity in m/s.")
-        return st, f"v = u + at = 5 + 2(3) = {v} m/s.", task
+        return st, f"v = u + at = {u} + {a}({t}) = {v} m/s.", task
     if skill == "newton_friction":
-        givens = {"m": Quantity(value=10, unit="kg"), "F_applied": Quantity(value=50, unit="N"),
-                  "mu": Quantity(value=0.2, unit="")}
-        a = (50 - 0.2 * 10 * 9.8) / 10
+        m, mu = _R.randint(2, 20), _R.choice([0.1, 0.2, 0.3, 0.4])
+        f_app = round(mu * m * 9.8 + _R.randint(5, 60))  # keep net force positive
+        a = (f_app - mu * m * 9.8) / m
+        givens = {"m": Quantity(value=m, unit="kg"), "F_applied": Quantity(value=f_app, unit="N"),
+                  "mu": Quantity(value=mu, unit="")}
         task = PhysicsTask(template="newton_friction", givens=givens, unknown="a",
                            expected_answer=Quantity(value=a, unit="m/s**2"))
-        st = (f"A 10 kg {flavor} is pushed with 50 N across a surface with friction "
-              "coefficient 0.2. Find its acceleration in m/s^2.")
+        st = (f"A {m} kg {flavor} is pushed with {f_app} N across a surface with friction "
+              f"coefficient {mu}. Find its acceleration in m/s^2.")
         return st, f"a = (F - mu*m*g)/m = {a:.2f} m/s^2.", task
     if skill == "work_energy":
-        givens = {"F": Quantity(value=20, unit="N"), "d": Quantity(value=4, unit="m")}
-        w = 20 * 4
+        f_, d = _R.randint(5, 50), _R.randint(1, 10)
+        w = f_ * d
+        givens = {"F": Quantity(value=f_, unit="N"), "d": Quantity(value=d, unit="m")}
         task = PhysicsTask(template="work_energy", givens=givens, unknown="work",
                            expected_answer=Quantity(value=w, unit="J"))
-        st = f"A constant 20 N force moves {flavor} 4 m in its direction. Find the work done in joules."
-        return st, f"W = Fd = 20(4) = {w} J.", task
+        st = f"A constant {f_} N force moves {flavor} {d} m in its direction. Find the work done in joules."
+        return st, f"W = Fd = {f_}({d}) = {w} J.", task
     if skill == "impulse_momentum":
-        givens = {"F": Quantity(value=15, unit="N"), "t": Quantity(value=2, unit="s")}
-        j = 15 * 2
+        f_, t = _R.randint(5, 40), _R.randint(1, 8)
+        j = f_ * t
+        givens = {"F": Quantity(value=f_, unit="N"), "t": Quantity(value=t, unit="s")}
         task = PhysicsTask(template="impulse_momentum", givens=givens, unknown="impulse",
                            expected_answer=Quantity(value=j, unit="N*s"))
-        st = f"A 15 N force acts on {flavor} for 2 s. Find the impulse in N*s."
-        return st, f"J = Ft = 15(2) = {j} N*s.", task
+        st = f"A {f_} N force acts on {flavor} for {t} s. Find the impulse in N*s."
+        return st, f"J = Ft = {f_}({t}) = {j} N*s.", task
     if skill == "circular_motion":
-        givens = {"m": Quantity(value=2, unit="kg"), "v": Quantity(value=4, unit="m/s"),
-                  "r": Quantity(value=8, unit="m")}
-        fc = 2 * 4 ** 2 / 8
+        m, v, r = _R.randint(1, 5), _R.randint(2, 10), _R.randint(2, 15)
+        fc = m * v ** 2 / r  # exact float; the verifier recomputes the same value
+        givens = {"m": Quantity(value=m, unit="kg"), "v": Quantity(value=v, unit="m/s"),
+                  "r": Quantity(value=r, unit="m")}
         task = PhysicsTask(template="circular_motion", givens=givens, unknown="force",
                            expected_answer=Quantity(value=fc, unit="N"))
-        st = (f"{flavor} of mass 2 kg moves in a circle of radius 8 m at 4 m/s. "
+        st = (f"{flavor} of mass {m} kg moves in a circle of radius {r} m at {v} m/s. "
               "Find the centripetal force in newtons.")
-        return st, f"F = mv^2/r = 2(16)/8 = {fc} N.", task
+        return st, f"F = mv^2/r = {m}({v**2})/{r} = {fc:.2f} N.", task
     raise ValueError(f"no physics builder for skill {skill}")
 
 
