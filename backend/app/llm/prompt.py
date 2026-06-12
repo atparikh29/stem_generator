@@ -10,7 +10,7 @@ import json
 
 from pydantic import ValidationError
 
-from ..content.skills import method_of
+from ..content.skills import SKILLS, method_of
 from ..schemas.generator import GeneratorOutput
 from .base import GenerationSpec
 
@@ -57,6 +57,37 @@ FEWSHOT = """Example (skill=derivative_rules, difficulty_target=2):
 """
 
 
+# Exact, verifier-aligned spec per physics template. Using these field names
+# avoids needless rejection; computable unknowns avoid off-template questions.
+_PHYSICS_SPEC = {
+    "kinematics": 'givens keys MUST be from {"u","a","t","v","s"} (SI units m/s, m/s^2, s, m). '
+                  'unknown MUST be one of "v","s","t","a". Typical: give u,a,t and ask for v.',
+    "newton_friction": 'givens keys MUST be {"m","F_applied","mu"} (kg, N, dimensionless). '
+                       'unknown MUST be "a" or "friction".',
+    "work_energy": 'givens keys MUST be {"F","d"} (N, m) to find work, OR {"m","v"} (kg, m/s) to find ke. '
+                   'unknown MUST be "work","ke", or "v".',
+    "impulse_momentum": 'givens keys MUST be {"F","t"} (N, s) to find impulse, OR {"m","v"} (kg, m/s) to find momentum. '
+                        'unknown MUST be "impulse","momentum", or "dv".',
+    "circular_motion": 'givens keys MUST be {"v","r"} (m/s, m) to find ac, OR {"m","v","r"} to find force. '
+                       'unknown MUST be "ac" or "force". Keep v < 100 m/s and r a few meters.',
+}
+
+_MATH_SPEC = {
+    "derivative": 'kind="derivative"; expression is a polynomial in x; expected_answer is its exact derivative.',
+    "integral": 'kind="integral"; expression in x; interval=[a,b]; expected_answer is the definite integral value.',
+    "limit": 'kind="limit"; expression in x; point=a; expected_answer is the limit value.',
+    "solve_equation": 'kind="solve_equation"; expression is "lhs = rhs"; for periodic/trig add interval=[a,b] '
+                      'so the solution is UNIQUE; expected_answer is that solution.',
+    "simplify": 'kind="simplify"; expression and expected_answer are equivalent forms.',
+}
+
+
+def _task_spec(skill: str) -> str:
+    if method_of(skill) == "physics":
+        return _PHYSICS_SPEC.get(SKILLS[skill].get("template", ""), "")
+    return _MATH_SPEC.get(method_of(skill), "")
+
+
 def build_generation_prompt(spec: GenerationSpec) -> str:
     ctx = json.dumps(spec.context, ensure_ascii=False)
     feedback = ""
@@ -70,8 +101,13 @@ def build_generation_prompt(spec: GenerationSpec) -> str:
         f"{FEWSHOT}\n"
         f"Generate one problem.\n"
         f"skill = {spec.skill} (verification method: {method_of(spec.skill)})\n"
+        f"TASK SPEC: {_task_spec(spec.skill)}\n"
         f"difficulty_target = {spec.difficulty_target}\n"
-        f"context (wording/theme only) = {ctx}"
+        f"context (wording/theme only) = {ctx}\n"
+        "REQUIRED: the statement must contain EVERY numeric value and unit from "
+        "givens (a student must be able to solve it from the statement alone), and "
+        "end with a clear 'Find/Determine ...' instruction. expected_answer must be "
+        "the correct, verifier-checkable answer."
         f"{feedback}\n"
         "Return ONLY the JSON object."
     )
