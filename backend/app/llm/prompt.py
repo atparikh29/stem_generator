@@ -48,15 +48,6 @@ Rules:
 - Personalization affects ONLY the statement's wording/context, never the skill or difficulty.
 """
 
-FEWSHOT = """Example (skill=derivative_rules, difficulty_target=2):
-{"skill":"derivative_rules","difficulty_target":2,
-"statement":"Find the derivative of f(x) = x^3 + 2x with respect to x.",
-"solution":"f'(x) = 3x^2 + 2.",
-"task":{"domain":"math","kind":"derivative","variable":"x",
-"expression":"x**3 + 2*x","expected_answer":"3*x**2 + 2"}}
-"""
-
-
 # Exact, verifier-aligned spec per physics template. Using these field names
 # avoids needless rejection; computable unknowns avoid off-template questions.
 _PHYSICS_SPEC = {
@@ -84,10 +75,59 @@ _MATH_SPEC = {
 }
 
 
+# A concrete, valid example per verification method/template, so the model has a
+# correct anchor for the exact skill (not just a generic one).
+_MATH_EXAMPLE = {
+    "derivative": '{"skill":"derivative_rules","difficulty_target":2,"statement":"Find the derivative of '
+                  'f(x) = x^3 + 2x with respect to x.","solution":"3x^2 + 2.","task":{"domain":"math",'
+                  '"kind":"derivative","variable":"x","expression":"x**3 + 2*x","expected_answer":"3*x**2 + 2"}}',
+    "limit": '{"skill":"limits","difficulty_target":2,"statement":"Evaluate the limit of (x^2 - 9)/(x - 3) as x '
+             'approaches 3.","solution":"Factor and cancel: 6.","task":{"domain":"math","kind":"limit",'
+             '"variable":"x","expression":"(x**2 - 9)/(x - 3)","point":3,"expected_answer":"6"}}',
+    "integral": '{"skill":"definite_integrals","difficulty_target":2,"statement":"Evaluate the definite integral '
+                'of x^2 from 0 to 2.","solution":"8/3.","task":{"domain":"math","kind":"integral","variable":"x",'
+                '"expression":"x**2","interval":[0,2],"expected_answer":"8/3"}}',
+    "solve_equation": '{"skill":"trig_equations","difficulty_target":2,"statement":"Solve sin(x) = 1/2 for x on '
+                      '[0, pi/2].","solution":"pi/6.","task":{"domain":"math","kind":"solve_equation","variable":"x",'
+                      '"expression":"sin(x) = 1/2","interval":[0,1.5708],"expected_answer":"pi/6"}}',
+    "simplify": '{"skill":"trig_identities","difficulty_target":2,"statement":"Simplify sin^2(x) + cos^2(x).",'
+                '"solution":"1.","task":{"domain":"math","kind":"simplify","variable":"x",'
+                '"expression":"sin(x)**2 + cos(x)**2","expected_answer":"1"}}',
+}
+
+_PHYSICS_EXAMPLE = {
+    "kinematics": '{"skill":"kinematics","difficulty_target":2,"statement":"A cart starts at 5 m/s and accelerates '
+                  'at 2 m/s^2 for 3 s. Find its final velocity.","solution":"11 m/s.","task":{"domain":"physics",'
+                  '"template":"kinematics","givens":{"u":{"value":5,"unit":"m/s"},"a":{"value":2,"unit":"m/s**2"},'
+                  '"t":{"value":3,"unit":"s"}},"unknown":"v","expected_answer":{"value":11,"unit":"m/s"}}}',
+    "circular_motion": '{"skill":"circular_motion","difficulty_target":3,"statement":"A 2 kg ball on a string moves '
+                       'in a circle of radius 4 m at 6 m/s. Find the centripetal force.","solution":"18 N.","task":'
+                       '{"domain":"physics","template":"circular_motion","givens":{"m":{"value":2,"unit":"kg"},'
+                       '"v":{"value":6,"unit":"m/s"},"r":{"value":4,"unit":"m"}},"unknown":"force",'
+                       '"expected_answer":{"value":18,"unit":"N"}}}',
+}
+
+# Hard constraints for math expressions (the common failure mode for weak models).
+_MATH_RULES = (
+    "MATH RULES: the expression must be a CONCRETE elementary function of the single "
+    "variable ONLY (e.g. polynomials, sin/cos/exp/log). Do NOT use undefined functions "
+    "like v(x) or f(x), do NOT introduce other letters (no h, s, t unless it is the "
+    "variable), and do NOT put '=' in a non-equation expression. This is a pure-math "
+    "problem — do NOT turn it into a physics word problem about motion/forces."
+)
+
+
 def _task_spec(skill: str) -> str:
     if method_of(skill) == "physics":
         return _PHYSICS_SPEC.get(SKILLS[skill].get("template", ""), "")
     return _MATH_SPEC.get(method_of(skill), "")
+
+
+def _example(skill: str) -> str:
+    if method_of(skill) == "physics":
+        tmpl = SKILLS[skill].get("template", "")
+        return _PHYSICS_EXAMPLE.get(tmpl, _PHYSICS_EXAMPLE["kinematics"])
+    return _MATH_EXAMPLE.get(method_of(skill), _MATH_EXAMPLE["derivative"])
 
 
 def build_generation_prompt(spec: GenerationSpec) -> str:
@@ -99,11 +139,19 @@ def build_generation_prompt(spec: GenerationSpec) -> str:
             + ", ".join(spec.failure_feedback)
             + ". Fix exactly these issues and keep the same skill and difficulty."
         )
+    is_math = method_of(spec.skill) != "physics"
+    domain_rule = (
+        _MATH_RULES if is_math
+        else "PHYSICS RULE: task.domain MUST be \"physics\" with the template below."
+    )
     return (
-        f"{FEWSHOT}\n"
+        f"Example for this exact skill:\n{_example(spec.skill)}\n\n"
         f"Generate one problem.\n"
         f"skill = {spec.skill} (verification method: {method_of(spec.skill)})\n"
+        f"The task MUST match this skill: "
+        f"{'kind=' + method_of(spec.skill) if is_math else 'domain=physics, template=' + SKILLS[spec.skill].get('template','')}.\n"
         f"TASK SPEC: {_task_spec(spec.skill)}\n"
+        f"{domain_rule}\n"
         f"difficulty_target = {spec.difficulty_target}\n"
         f"context (wording/theme only) = {ctx}\n"
         "REQUIRED: the statement must contain EVERY numeric value and unit from "

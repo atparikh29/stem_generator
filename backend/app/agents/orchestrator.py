@@ -20,13 +20,37 @@ from typing import Callable, Optional
 
 from sqlmodel import Session, select
 
-from ..content.skills import domain_of
+from ..content.skills import SKILLS, domain_of, method_of
 from ..llm.base import GenerationSpec, LLMProvider
 from ..llm.prompt import build_generation_prompt
 from ..models import Event, ProblemRecord, Student
+from ..schemas.generator import MathTask, PhysicsTask
 from ..schemas.verifier import VerifierReport
 from ..verification import engine
 from . import context_selector, planner
+
+
+def _task_matches_skill(skill: str, task) -> str | None:
+    """Return a mismatch message if the generated task doesn't fit the skill.
+
+    A "limits" skill must yield a math task with kind=limit; a physics skill must
+    yield the right template. The LLM occasionally emits the wrong task shape
+    (e.g. a physics kinematics task for a limits skill) -- that's a contract
+    violation, treated as json_invalid so the loop regenerates.
+    """
+    method = method_of(skill)
+    if method == "physics":
+        if not isinstance(task, PhysicsTask):
+            return f"skill '{skill}' needs a physics task, got domain '{getattr(task, 'domain', '?')}'"
+        expected = SKILLS[skill].get("template")
+        if task.template != expected:
+            return f"skill '{skill}' needs template '{expected}', got '{task.template}'"
+        return None
+    if not isinstance(task, MathTask):
+        return f"skill '{skill}' needs a math task, got domain '{getattr(task, 'domain', '?')}'"
+    if task.kind != method:
+        return f"skill '{skill}' needs kind '{method}', got '{task.kind}'"
+    return None
 
 
 @dataclass
@@ -107,6 +131,16 @@ def generate_next_problem(
             attempts.append({"attempt": attempt, "failures": failure_feedback, "detail": str(exc)})
             _log(session, student.id, "fail", {"attempt": attempt, "reason": "json_invalid", "detail": str(exc)})
             _emit(progress, status="rejected", attempt=attempt, failures=["json_invalid"], detail=str(exc))
+            last_report = VerifierReport(accepted=False, failure_reasons=["json_invalid"])
+            continue
+
+        # Contract check: the task must match the planned skill (else json_invalid).
+        mismatch = _task_matches_skill(skill, candidate.task)
+        if mismatch:
+            failure_feedback = [f"json_invalid ({mismatch})"]
+            attempts.append({"attempt": attempt, "failures": ["json_invalid"], "detail": mismatch})
+            _log(session, student.id, "fail", {"attempt": attempt, "reason": "json_invalid", "detail": mismatch})
+            _emit(progress, status="rejected", attempt=attempt, failures=["json_invalid"], detail=mismatch)
             last_report = VerifierReport(accepted=False, failure_reasons=["json_invalid"])
             continue
 

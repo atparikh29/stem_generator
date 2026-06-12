@@ -31,6 +31,25 @@ def test_loop_runs_without_session():
     assert result.report is not None
 
 
+def test_task_skill_consistency_check():
+    from app.agents.orchestrator import _task_matches_skill
+    from app.schemas.generator import MathTask, PhysicsTask, Quantity
+
+    # right shapes pass
+    assert _task_matches_skill("limits", MathTask(kind="limit", expression="x", point=0.0, expected_answer="0")) is None
+    assert _task_matches_skill(
+        "kinematics",
+        PhysicsTask(template="kinematics", givens={"u": Quantity(value=1, unit="m/s")}, unknown="v",
+                    expected_answer=Quantity(value=1, unit="m/s")),
+    ) is None
+    # wrong shapes are flagged
+    assert _task_matches_skill("limits", MathTask(kind="derivative", expression="x", expected_answer="1"))
+    assert _task_matches_skill(
+        "limits",
+        PhysicsTask(template="kinematics", givens={}, unknown="v", expected_answer=Quantity(value=1, unit="m/s")),
+    )
+
+
 def test_progress_callback_receives_live_events():
     events: list[dict] = []
     orchestrator.generate_next_problem(
