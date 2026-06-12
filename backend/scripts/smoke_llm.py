@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import argparse
 
-from app.agents import assessor, orchestrator
+from app.agents import orchestrator
 from app.config import settings
 from app.llm.base import GenerationSpec, get_provider
 from app.models import Student
@@ -113,7 +113,15 @@ def main() -> None:
         elif status == "exhausted":
             print(f"\n  budget exhausted; last failures {ev['failures']}", flush=True)
 
-    student = Student(id="smoke", interests=["space"], skill_vector=assessor.initial_skill_vector())
+    # Seed the student so the Planner selects the requested --skill (it would
+    # otherwise pick autonomously and ignore --skill). Neutral interests keep the
+    # context generic.
+    from app.content.skills import all_skills
+
+    student = Student(
+        id="smoke", interests=[],
+        skill_vector={s: (0.0 if s == args.skill else 0.9) for s in all_skills()},
+    )
     result = orchestrator.generate_next_problem(
         student, provider, session=None, max_regenerations=args.max_regen, progress=show
     )

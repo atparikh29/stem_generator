@@ -104,6 +104,10 @@ def explain(report: VerifierReport) -> list[dict]:
     for code in report.failure_reasons:
         check = report.checks.get(_CHECK_FOR.get(code, ""), {})
         detail = check.get("detail") or check.get("error") or ""
+        # A correctness failure can originate in translation (unparseable task);
+        # fall back to its error so the reason is never blank.
+        if not detail and code in ("math_invalid", "nonunique_solution", "unit_mismatch"):
+            detail = report.checks.get("translation", {}).get("error", "")
         if code == "semantic_ambiguity":
             amb = check.get("data", {}).get("ambiguity_score")
             if amb is not None:
