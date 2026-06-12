@@ -16,7 +16,7 @@ Every step appends to the immutable event log.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 from sqlmodel import Session, select
 
@@ -44,11 +44,18 @@ def _log(session: Optional[Session], student_id: str, type_: str, payload: dict)
     session.commit()
 
 
+def _emit(progress: Optional[Callable[[dict], None]], **info) -> None:
+    """Report live loop progress, if a callback was supplied (e.g. the CLI)."""
+    if progress is not None:
+        progress(info)
+
+
 def generate_next_problem(
     student: Student,
     provider: LLMProvider,
     session: Optional[Session] = None,
     max_regenerations: int = 5,
+    progress: Optional[Callable[[dict], None]] = None,
 ) -> GenerationResult:
     # 1-2. Observe + student model (the skill vector is maintained on the Student).
     skill_vector = student.skill_vector or {}
@@ -77,7 +84,9 @@ def generate_next_problem(
     last_report = VerifierReport(accepted=False, failure_reasons=["json_invalid"])
 
     # 5-8. Generate -> verify -> accept/regenerate.
+    _emit(progress, status="plan", skill=skill, difficulty_target=difficulty_target)
     for attempt in range(max_regenerations + 1):
+        _emit(progress, status="generating", attempt=attempt)
         spec = GenerationSpec(skill, difficulty_target, context, failure_feedback)
         try:
             candidate = provider.generate_problem(spec)
@@ -85,6 +94,7 @@ def generate_next_problem(
             failure_feedback = ["json_invalid"]
             attempts.append({"attempt": attempt, "failures": failure_feedback, "detail": str(exc)})
             _log(session, student.id, "fail", {"attempt": attempt, "reason": "json_invalid", "detail": str(exc)})
+            _emit(progress, status="rejected", attempt=attempt, failures=["json_invalid"], detail=str(exc))
             last_report = VerifierReport(accepted=False, failure_reasons=["json_invalid"])
             continue
 
@@ -93,6 +103,7 @@ def generate_next_problem(
         report = engine.verify(candidate, provider)
         last_report = report
         if report.accepted:
+            _emit(progress, status="accepted", attempt=attempt, statement=candidate.statement)
             problem = ProblemRecord(
                 student_id=student.id,
                 domain=domain_of(skill).value,
@@ -117,8 +128,10 @@ def generate_next_problem(
         failure_feedback = report.failure_reasons
         attempts.append({"attempt": attempt, "failures": failure_feedback})
         _log(session, student.id, "fail", {"attempt": attempt, "reasons": failure_feedback})
+        _emit(progress, status="rejected", attempt=attempt, failures=failure_feedback)
 
     # Exhausted regenerations.
+    _emit(progress, status="exhausted", failures=last_report.failure_reasons)
     failed = ProblemRecord(
         student_id=student.id,
         domain=domain_of(skill).value,

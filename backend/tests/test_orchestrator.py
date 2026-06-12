@@ -29,3 +29,15 @@ def test_loop_runs_without_session():
     provider = MockProvider()
     result = orchestrator.generate_next_problem(_student(), provider, session=None)
     assert result.report is not None
+
+
+def test_progress_callback_receives_live_events():
+    events: list[dict] = []
+    orchestrator.generate_next_problem(
+        _student(), MockProvider(), session=None, progress=events.append
+    )
+    statuses = [e["status"] for e in events]
+    # The mock accepts on the first attempt: plan -> generating -> accepted.
+    assert statuses[0] == "plan"
+    assert "generating" in statuses
+    assert "accepted" in statuses

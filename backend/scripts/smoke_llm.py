@@ -58,17 +58,26 @@ def main() -> None:
         print("json_invalid on this raw attempt:", str(exc)[:140])
         print("(this is expected for fallible models; the loop below handles it)")
 
-    print("\n--- (c) Full regenerate-until-valid loop ---")
+    print("\n--- (c) Full regenerate-until-valid loop (live) ---")
+
+    def show(ev: dict) -> None:
+        status = ev.get("status")
+        if status == "plan":
+            print(f"  plan: skill={ev['skill']} difficulty={ev['difficulty_target']}", flush=True)
+        elif status == "generating":
+            print(f"  attempt {ev['attempt']}: generating… (calling the model)", flush=True)
+        elif status == "accepted":
+            print(f"  attempt {ev['attempt']}: ✓ ACCEPTED -> {ev['statement']}", flush=True)
+        elif status == "rejected":
+            print(f"  attempt {ev['attempt']}: ✗ rejected {ev['failures']} -> regenerating", flush=True)
+        elif status == "exhausted":
+            print(f"  budget exhausted; last failures {ev['failures']}", flush=True)
+
     student = Student(id="smoke", interests=["space"], skill_vector=assessor.initial_skill_vector())
     result = orchestrator.generate_next_problem(
-        student, provider, session=None, max_regenerations=args.max_regen
+        student, provider, session=None, max_regenerations=args.max_regen, progress=show
     )
-    print("accepted   :", result.accepted)
-    print("regen_count:", result.regen_count)
-    for a in result.attempts:
-        print("   rejected attempt:", a["failures"])
-    if result.accepted:
-        print("delivered  :", result.problem.statement)
+    print(f"\nresult: accepted={result.accepted}  regen_count={result.regen_count}")
 
 
 if __name__ == "__main__":
