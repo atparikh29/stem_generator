@@ -1,6 +1,6 @@
 # Convenience targets. Run from the repo root.
 
-.PHONY: setup backend test frontend experiment
+.PHONY: setup backend test frontend experiment smoke-llm
 
 setup:  ## Create venv and install backend deps
 	cd backend && python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
@@ -16,3 +16,6 @@ frontend:  ## Run the Next.js dev server
 
 experiment:  ## Run the reliability experiment harness
 	cd backend && . .venv/bin/activate && python -m experiments.run --students 10 --problems 10
+
+smoke-llm:  ## Test the configured LLM provider end-to-end (uses .env; may call a real model)
+	cd backend && . .venv/bin/activate && python -m scripts.smoke_llm

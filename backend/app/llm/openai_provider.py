@@ -28,13 +28,24 @@ class OpenAIProvider:
         return resp.choices[0].message.content or ""
 
     def generate_problem(self, spec: GenerationSpec) -> GeneratorOutput:
-        resp = self._client.chat.completions.create(
-            model=self._model,
-            messages=[
-                {"role": "system", "content": SYSTEM_INSTRUCTION},
-                {"role": "user", "content": build_generation_prompt(spec)},
-            ],
-            temperature=0.4,
-            response_format={"type": "json_object"},
-        )
+        messages = [
+            {"role": "system", "content": SYSTEM_INSTRUCTION},
+            {"role": "user", "content": build_generation_prompt(spec)},
+        ]
+        try:
+            resp = self._client.chat.completions.create(
+                model=self._model,
+                messages=messages,
+                temperature=0.4,
+                response_format={"type": "json_object"},
+            )
+        except Exception:
+            # Some OpenAI-compatible servers (e.g. some Ollama/vLLM builds) reject
+            # response_format. Retry without it; parse_generator_output still
+            # extracts the JSON object from the reply.
+            resp = self._client.chat.completions.create(
+                model=self._model,
+                messages=messages,
+                temperature=0.4,
+            )
         return parse_generator_output(resp.choices[0].message.content or "")
