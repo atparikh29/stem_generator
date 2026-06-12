@@ -22,6 +22,7 @@ from sqlmodel import Session, select
 
 from ..content.skills import domain_of
 from ..llm.base import GenerationSpec, LLMProvider
+from ..llm.prompt import build_generation_prompt
 from ..models import Event, ProblemRecord, Student
 from ..schemas.verifier import VerifierReport
 from ..verification import engine
@@ -95,8 +96,10 @@ def generate_next_problem(
     # 5-8. Generate -> verify -> accept/regenerate.
     _emit(progress, status="plan", skill=skill, difficulty_target=difficulty_target)
     for attempt in range(max_regenerations + 1):
-        _emit(progress, status="generating", attempt=attempt)
         spec = GenerationSpec(skill, difficulty_target, context, failure_feedback)
+        # The prompt grows each retry: the previous failure reasons are appended.
+        _emit(progress, status="generating", attempt=attempt,
+              feedback=list(failure_feedback), prompt=build_generation_prompt(spec))
         try:
             candidate = provider.generate_problem(spec)
         except ValueError as exc:  # invalid/un-parseable JSON

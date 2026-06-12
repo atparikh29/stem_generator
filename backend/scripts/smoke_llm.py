@@ -75,6 +75,7 @@ def main() -> None:
         print("(this is expected for fallible models; the loop below handles it)")
 
     print("\n--- (c) Full regenerate-until-valid loop (live) ---")
+    show_prompt = not args.hide_prompt
 
     def show(ev: dict) -> None:
         status = ev.get("status")
@@ -83,6 +84,15 @@ def main() -> None:
             print(f"  plan: skill={ev['skill']} difficulty={ev['difficulty_target']}", flush=True)
         elif status == "generating":
             print(f"\n  attempt {a}: generating… (calling the model)", flush=True)
+            # What changed this attempt: the appended failure feedback.
+            if ev.get("feedback"):
+                print(f"    ↻ prompt now also says: \"previous attempt REJECTED for "
+                      f"{', '.join(ev['feedback'])}; fix exactly these\"", flush=True)
+            if show_prompt and ev.get("prompt"):
+                print("    ---- full prompt for this attempt ----", flush=True)
+                for line in ev["prompt"].splitlines():
+                    print("    | " + line, flush=True)
+                print("    --------------------------------------", flush=True)
         elif status in ("accepted", "rejected"):
             # Show what the model actually proposed, even when it gets rejected.
             if ev.get("statement"):
