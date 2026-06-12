@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     # Verifier configuration
     semantic_ambiguity_threshold: float = 0.5
     max_regenerations: int = 5
+    # Allowed |observed - target| difficulty-bin gap. 0 = exact match (strict,
+    # for the formal experiment); 1 is more forgiving for demos / weaker models.
+    difficulty_tolerance: int = 0
 
 
 settings = Settings()

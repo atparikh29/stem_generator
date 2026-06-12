@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import sympy as sp
 
+from ..config import settings
 from ..schemas.generator import MathTask, PhysicsTask
 from ..translation.registry import parse_equation, parse_math
 from .result import CheckResult, FailureCode
@@ -75,10 +76,11 @@ def score(task: MathTask | PhysicsTask) -> int:
 
 def verify(task: MathTask | PhysicsTask, target: int) -> CheckResult:
     observed = score(task)
-    if observed == target:
+    tolerance = settings.difficulty_tolerance
+    if abs(observed - target) <= tolerance:
         return CheckResult.ok("difficulty on target", difficulty_observed=observed)
     return CheckResult.fail(
         FailureCode.OFF_TARGET_DIFFICULTY,
-        f"observed difficulty bin {observed} != target {target}",
+        f"observed difficulty bin {observed} != target {target} (tolerance {tolerance})",
         difficulty_observed=observed,
     )
