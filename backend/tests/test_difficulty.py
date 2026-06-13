@@ -11,6 +11,19 @@ def test_score_is_stable():
     assert difficulty.score(_BIN3) == 3
 
 
+def test_difficulty_is_normalized_per_skill():
+    # Each skill spans low->high relative to its OWN complexity range.
+    easy_deriv = MathTask(kind="derivative", expression="x**2", expected_answer="2*x")
+    hard_deriv = MathTask(kind="derivative", expression="x**5 - 3*x**4 + 2*x**3 - x**2 + 7*x",
+                          expected_answer="0")
+    assert difficulty.score(easy_deriv) == 1
+    assert difficulty.score(hard_deriv) == 5
+    # A canonical factorable limit is mid-range, not pinned at the top.
+    lim = MathTask(kind="limit", variable="x", expression="(x**2 - 9)/(x - 3)", point=3.0,
+                   expected_answer="6")
+    assert 1 <= difficulty.score(lim) <= 3
+
+
 def test_exact_match_passes():
     saved = settings.difficulty_tolerance
     settings.difficulty_tolerance = 0
