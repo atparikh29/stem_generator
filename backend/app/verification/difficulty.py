@@ -37,12 +37,33 @@ _PHYS_BASE = {
 }
 
 
-def _bin(score: float, thresholds: list[float]) -> int:
-    """Map a raw score to a 1..5 bin via ascending thresholds."""
-    for i, t in enumerate(thresholds, start=1):
-        if score <= t:
-            return i
-    return 5
+# Per-skill (lo, hi) raw-score anchors: lo = the simplest *realistic* problem for
+# this kind/template (bin 1), hi = its hardest (bin 5). Difficulty is binned
+# RELATIVE to the skill's own achievable range, so every skill can span 1..5 and
+# the planner's targets are reachable (a global scale made e.g. any limit >= bin 4
+# and any polynomial derivative <= bin 3).
+_MATH_ANCHORS = {
+    "derivative": (3.0, 14.0),
+    "integral": (3.0, 9.0),
+    "limit": (6.5, 11.0),
+    "solve_equation": (2.5, 6.0),
+    "simplify": (1.0, 13.5),
+}
+_PHYS_ANCHORS = {
+    "kinematics": (2.0, 4.5),
+    "newton_friction": (3.5, 6.0),
+    "work_energy": (2.5, 5.0),
+    "impulse_momentum": (2.0, 4.5),
+    "circular_motion": (3.5, 6.5),
+}
+
+
+def _norm_bin(raw: float, lo: float, hi: float) -> int:
+    """Map a raw score into 1..5 relative to [lo, hi]."""
+    if hi <= lo:
+        return 3
+    frac = (raw - lo) / (hi - lo)
+    return max(1, min(5, 1 + round(frac * 4)))
 
 
 def _math_score(task: MathTask) -> float:
@@ -70,8 +91,10 @@ def _physics_score(task: PhysicsTask) -> float:
 
 def score(task: MathTask | PhysicsTask) -> int:
     if isinstance(task, MathTask):
-        return _bin(_math_score(task), [2.5, 5.0, 8.0, 12.0])
-    return _bin(_physics_score(task), [2.0, 3.0, 4.0, 5.0])
+        lo, hi = _MATH_ANCHORS.get(task.kind, (2.5, 12.0))
+        return _norm_bin(_math_score(task), lo, hi)
+    lo, hi = _PHYS_ANCHORS.get(task.template, (2.0, 5.0))
+    return _norm_bin(_physics_score(task), lo, hi)
 
 
 def verify(task: MathTask | PhysicsTask, target: int) -> CheckResult:
