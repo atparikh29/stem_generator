@@ -113,17 +113,12 @@ def main() -> None:
         elif status == "exhausted":
             print(f"\n  budget exhausted; last failures {ev['failures']}", flush=True)
 
-    # Seed the student so the Planner selects the requested --skill (it would
-    # otherwise pick autonomously and ignore --skill). Neutral interests keep the
-    # context generic.
-    from app.content.skills import all_skills
-
-    student = Student(
-        id="smoke", interests=[],
-        skill_vector={s: (0.0 if s == args.skill else 0.9) for s in all_skills()},
-    )
+    # Honor --skill and --difficulty by overriding the Planner (neutral interests
+    # keep the context generic).
+    student = Student(id="smoke", interests=[])
     result = orchestrator.generate_next_problem(
-        student, provider, session=None, max_regenerations=args.max_regen, progress=show
+        student, provider, session=None, max_regenerations=args.max_regen, progress=show,
+        skill_override=args.skill, difficulty_override=args.difficulty,
     )
     print(f"\nresult: accepted={result.accepted}  regen_count={result.regen_count}")
 

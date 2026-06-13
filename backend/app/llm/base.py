@@ -41,8 +41,10 @@ class LLMProvider(Protocol):
     def generate_problem(self, spec: GenerationSpec) -> GeneratorOutput: ...
 
 
-def get_provider() -> LLMProvider:
-    provider = settings.llm_provider.lower()
+def get_provider(override: str | None = None) -> LLMProvider:
+    """Return the LLM provider. `override` (mock|openai|anthropic) lets a request
+    pick a model regardless of the .env default."""
+    provider = (override or settings.llm_provider).lower()
     if provider == "mock":
         from .mock import MockProvider
 

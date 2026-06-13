@@ -65,13 +65,20 @@ _PHYSICS_SPEC = {
                        'on a curved road, a stone in a sling) — NOT a satellite or planetary orbit.',
 }
 
+# Describe each kind by its full verifiable range (SymPy handles any elementary
+# function), inviting variety rather than a fixed form.
 _MATH_SPEC = {
-    "derivative": 'kind="derivative"; expression is a polynomial in x; expected_answer is its exact derivative.',
-    "integral": 'kind="integral"; expression in x; interval=[a,b]; expected_answer is the definite integral value.',
-    "limit": 'kind="limit"; expression in x; point=a; expected_answer is the limit value.',
-    "solve_equation": 'kind="solve_equation"; expression is "lhs = rhs"; for periodic/trig add interval=[a,b] '
-                      'so the solution is UNIQUE; expected_answer is that solution.',
-    "simplify": 'kind="simplify"; expression and expected_answer are equivalent forms.',
+    "derivative": 'kind="derivative"; differentiate ANY elementary function of the variable — '
+                  'polynomials, rationals, trig (sin/cos/tan), exp, log, and products / quotients / '
+                  'compositions (product, quotient, chain rule). expected_answer = the exact derivative.',
+    "integral": 'kind="integral"; a definite integral over interval=[a,b] of an elementary function that '
+                'HAS a closed form (polynomials, sin/cos, exp, simple rationals). expected_answer = the exact value.',
+    "limit": 'kind="limit"; a limit as the variable -> point, including indeterminate forms you resolve '
+             '(factorable rationals, standard limits). expected_answer = the limit value.',
+    "solve_equation": 'kind="solve_equation"; expression "lhs = rhs" with a UNIQUE real solution. Vary it: '
+                      'linear, quadratic, exponential, logarithmic, or trig (add interval=[a,b] for trig so the '
+                      'solution is unique). expected_answer = that solution.',
+    "simplify": 'kind="simplify"; expression and expected_answer are equivalent. Vary algebraic and trig identities.',
 }
 
 
@@ -145,7 +152,8 @@ def build_generation_prompt(spec: GenerationSpec) -> str:
         else "PHYSICS RULE: task.domain MUST be \"physics\" with the template below."
     )
     return (
-        f"Example for this exact skill:\n{_example(spec.skill)}\n\n"
+        f"Example showing only the JSON FORMAT — do NOT reuse its specific function; "
+        f"invent a DIFFERENT, varied problem of the same kind:\n{_example(spec.skill)}\n\n"
         f"Generate one problem.\n"
         f"skill = {spec.skill} (verification method: {method_of(spec.skill)})\n"
         f"The task MUST match this skill: "

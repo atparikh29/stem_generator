@@ -1,4 +1,5 @@
 const BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000/api";
+export const API_BASE = BASE;
 
 async function req(path: string, opts: RequestInit = {}) {
   const res = await fetch(`${BASE}${path}`, {
@@ -33,4 +34,6 @@ export const api = {
     }),
 
   events: (studentId: string) => req(`/students/${studentId}/events`),
+
+  skills: (): Promise<{ id: string; domain: string; method: string }[]> => req("/skills"),
 };
