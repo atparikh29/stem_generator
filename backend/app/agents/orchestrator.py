@@ -90,12 +90,15 @@ def generate_next_problem(
     session: Optional[Session] = None,
     max_regenerations: int = 5,
     progress: Optional[Callable[[dict], None]] = None,
+    skill_override: Optional[str] = None,
+    difficulty_override: Optional[int] = None,
 ) -> GenerationResult:
     # 1-2. Observe + student model (the skill vector is maintained on the Student).
     skill_vector = student.skill_vector or {}
     _log(session, student.id, "observe", {"skill_vector": skill_vector})
 
     # 3. Plan (skip recently-served skills so a wrong answer doesn't pin us).
+    #    Manual overrides (from the demo UI) bypass the planner's choice.
     recent_skills: list[str] = []
     if session is not None:
         recent_skills = list(
@@ -106,8 +109,12 @@ def generate_next_problem(
                 .limit(3)
             ).all()
         )
-    skill, difficulty_target = planner.plan(skill_vector, recent_skills)
-    _log(session, student.id, "plan", {"skill": skill, "difficulty_target": difficulty_target})
+    planned_skill, planned_difficulty = planner.plan(skill_vector, recent_skills)
+    skill = skill_override or planned_skill
+    difficulty_target = difficulty_override or planned_difficulty
+    _log(session, student.id, "plan",
+         {"skill": skill, "difficulty_target": difficulty_target,
+          "manual": bool(skill_override or difficulty_override)})
 
     # 4. Context.
     context = context_selector.select(student.interests or [], skill)
@@ -172,14 +179,16 @@ def generate_next_problem(
             _log(session, student.id, "deliver", {"problem_id": problem.id, "skill": skill, "regen_count": attempt})
             return GenerationResult(True, problem, report, attempt, attempts)
 
-        failure_feedback = report.failure_reasons
-        attempts.append({"attempt": attempt, "failures": failure_feedback})
-        _log(session, student.id, "fail", {"attempt": attempt, "reasons": failure_feedback})
-        # Per-failure, human-readable explanations (includes the verifier's own
-        # computed answer inside the math_invalid detail).
-        _emit(progress, status="rejected", attempt=attempt, failures=failure_feedback,
+        # Feed the SPECIFIC reason back to the model (not just the code) so it can
+        # actually fix the issue and converge in fewer attempts.
+        explained = engine.explain(report)
+        failure_feedback = [f"{e['code']}: {e['detail']}" if e.get("detail") else e["code"]
+                            for e in explained]
+        attempts.append({"attempt": attempt, "failures": report.failure_reasons})
+        _log(session, student.id, "fail", {"attempt": attempt, "reasons": report.failure_reasons})
+        _emit(progress, status="rejected", attempt=attempt, failures=report.failure_reasons,
               statement=candidate.statement, answer=_answer_str(candidate.task),
-              details=engine.explain(report))
+              details=explained)
 
     # Exhausted regenerations.
     _emit(progress, status="exhausted", failures=last_report.failure_reasons)
