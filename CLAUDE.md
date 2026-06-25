@@ -22,6 +22,12 @@ observe → assess → plan → select context → generate(JSON)
         → translate(JSON→symbolic) → verify → accept | regenerate(with reason)
 ```
 
+Wrapped around that core is a **session flow**: a new session onboards (pick
+context/skill/difficulty) and is served an **instant, pre-verified problem from a
+bank** (`content/problem_bank.py`); a returning session restores saved state.
+Onboarding and any settings change serve a pre-stored problem (no LLM wait);
+"continue" runs the Planner → LLM loop above. See `docs/architecture.md`.
+
 Read `docs/architecture.md` for the long version. Source-of-truth design lives in
 the three PDFs the project was specced from (kept out of git; ask Anay).
 
@@ -35,9 +41,10 @@ backend/app/
   verification/   math_verifier (SymPy), physics_verifier (templates+pint),
                   difficulty, semantic, engine (acceptance rule), result (failure codes)
   schemas/        Pydantic: generator / verifier / translation-record (Appendix B)
-  content/        skills taxonomy + curated context library
-  api/            FastAPI routes
-  models.py       immutable Event log + Student + ProblemRecord
+  content/        skills taxonomy, context library, problem_bank (pre-verified bank)
+  api/            FastAPI routes (sessions, pre-stored, SSE stream, attempts)
+  scripts/        build_problem_bank.py (seed + --augment), smoke_llm, list_skills
+  models.py       immutable Event log + Student (=session, holds saved state) + ProblemRecord
 backend/tests/    pytest; runs fully offline on the mock provider
 frontend/         Next.js (App Router) practice UI
 docs/             architecture + experiment notes

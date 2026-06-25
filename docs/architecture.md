@@ -14,10 +14,32 @@ Three processes:
 3. **Database** — SQLite by default (zero setup), PostgreSQL for real runs. Holds
    an **append-only event log** plus convenience projections.
 
+## 1b. The session flow (wraps the loop)
+
+The flowchart wraps the closed loop in a session lifecycle:
+
+- **New session → onboarding.** The user picks context, skill, difficulty (and
+  model). `POST /sessions` creates the session row (`models.Student`, which now
+  also stores the saved state) and serves an **instant pre-stored problem**.
+- **Returning session.** The browser keeps the session id in `localStorage`;
+  `GET /sessions/{id}` restores saved context/skill/difficulty + skill vector.
+- **Pre-stored vs. continue.** Onboarding and any *settings change*
+  (`POST /sessions/{id}/settings`) serve an already-verified problem from the
+  bank via `GET /sessions/{id}/pre-stored` → `content/problem_bank.py` →
+  `orchestrator.fetch_pre_stored` — no LLM wait. **Continue** (no settings
+  change) runs the full Planner → LLM loop, streamed live over SSE
+  (`GET /sessions/{id}/next-problem/stream`).
+- **Why a bank?** The first problem (and every post-settings-change problem)
+  appears instantly and offline. The bank is built by
+  `scripts/build_problem_bank.py`: a deterministic SymPy/pint **seed** (every
+  entry passes the full verifier at build time), plus an optional `--augment`
+  arm that asks the LLM for *similar* problems and keeps the verifier passers.
+  Pre-stored problems are verifier-valid, so "the verifier is the oracle" holds.
+
 ## 2. The closed loop, step by step
 
-Everything below happens inside `agents/orchestrator.py::generate_next_problem`.
-Each numbered step maps to a flowchart box.
+Everything below happens inside `agents/orchestrator.py::generate_next_problem`
+(the "continue" path). Each numbered step maps to a flowchart box.
 
 | # | Step | Module | Output |
 |---|------|--------|--------|

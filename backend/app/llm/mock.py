@@ -37,25 +37,27 @@ def _build_math(skill: str, k: int):
     different problems with correct, re-derived answers.
     """
     if skill in ("derivative_rules", "tangent_line"):
-        c = _R.randint(1, 9)
-        f = X ** (k + 1) + c * X
+        # k polynomial terms of increasing degree -> difficulty scales with k.
+        f = sum(_R.randint(1, 5) * X ** (i + 1) for i in range(1, k + 1))
         d = sp.diff(f, X)
         verb = "Find the slope of the tangent line function" if skill == "tangent_line" else "Find the derivative"
-        return _math("derivative", f"x**{k+1} + {c}*x", str(d),
-                     f"{verb} of f(x) = x^{k+1} + {c}x with respect to x.",
-                     f"f'(x) = {d}")
+        return _math("derivative", str(f), str(d),
+                     f"{verb} of f(x) = {f} with respect to x.", f"f'(x) = {d}")
     if skill == "limits":
-        a = _R.randint(1, 6)
-        expr = f"(x**2 - {a*a})/(x - {a})"
-        val = 2 * a
-        return _math("limit", expr, str(val),
-                     f"Evaluate the limit of (x^2 - {a*a})/(x - {a}) as x approaches {a}.",
+        # (x^n - a^n)/(x - a) -> limit n*a^(n-1); higher n scales difficulty.
+        a, n = _R.randint(1, 5), k + 1
+        f = (X ** n - a ** n) / (X - a)
+        val = sp.limit(f, X, a)
+        return _math("limit", str(f), str(val),
+                     f"Evaluate the limit of ({sp.numer(sp.together(f))})/(x - {a}) as x approaches {a}.",
                      f"Factor and cancel: limit = {val}.", point=float(a))
     if skill == "definite_integrals":
-        b = _R.randint(2, 4)
-        val = sp.Rational(b ** (k + 1), k + 1)
-        return _math("integral", f"x**{k}", str(val),
-                     f"Evaluate the definite integral of x^{k} from 0 to {b}.",
+        # Integrand = sum of k monomials (degrees 1..k) -> difficulty scales with k.
+        f = sum(_R.randint(1, 5) * X ** i for i in range(1, k + 1))
+        b = _R.randint(2, 3)
+        val = sp.integrate(f, (X, 0, b))
+        return _math("integral", str(f), str(val),
+                     f"Evaluate the definite integral of {f} from 0 to {b}.",
                      f"By the FTC, the integral equals {val}.", interval=[0.0, float(b)])
     if skill == "optimization":
         r = _R.randint(1, 9)  # critical point of f(x)=x^2-2r x  ->  f'(x)=2x-2r=0
@@ -75,10 +77,12 @@ def _build_math(skill: str, k: int):
                      f"Solve e^x = {c} for x. Express the answer exactly.",
                      f"x = ln({c}).")
     if skill == "trig_identities":
-        c = _R.randint(0, 9)
-        return _math("simplify", f"sin(x)**2 + cos(x)**2 + {c}", str(1 + c),
-                     f"Simplify sin^2(x) + cos^2(x) + {c}.",
-                     f"Using the Pythagorean identity, the expression equals {1 + c}.")
+        # (sin^2 + cos^2)^k + c  -> simplifies to 1 + c; higher k scales difficulty.
+        c = _R.randint(0, 5)
+        f = (sp.sin(X) ** 2 + sp.cos(X) ** 2) ** k + c
+        simplified = sp.simplify(f)
+        return _math("simplify", str(f), str(simplified),
+                     f"Simplify {f}.", f"Using sin^2+cos^2=1, the expression equals {simplified}.")
     if skill == "vectors":
         a, b = _R.randint(2, 8), _R.randint(2, 8)
         mag = sp.sqrt(a * a + b * b)
@@ -86,11 +90,11 @@ def _build_math(skill: str, k: int):
                      f"Find the magnitude of the vector <{a}, {b}>.",
                      f"|v| = sqrt({a}^2 + {b}^2) = {mag}.")
     if skill == "function_transformations":
-        c = _R.randint(1, 9)
-        expr = sp.expand((X + c) ** 2)
-        return _math("simplify", f"(x + {c})**2", str(expr),
-                     f"Expand (x + {c})^2.",
-                     f"(x + {c})^2 = {expr}.")
+        # Expand (x + c)^(k+1); higher power -> more terms -> higher difficulty.
+        c = _R.randint(1, 5)
+        expr = sp.expand((X + c) ** (k + 1))
+        return _math("simplify", f"(x + {c})**{k+1}", str(expr),
+                     f"Expand (x + {c})^{k+1}.", f"(x + {c})^{k+1} = {expr}.")
     raise ValueError(f"no math builder for skill {skill}")
 
 
@@ -168,12 +172,16 @@ class MockProvider:
             statement, solution, task = _build_physics(spec.skill, spec.context)
             target = difficulty.score(task)
         else:
-            # Search a small family for a candidate that hits the target difficulty.
+            # Search the complexity ladder for a candidate that hits the target
+            # difficulty (try a few random draws per knob for variety).
             chosen = None
-            for k in range(1, 7):
-                statement, solution, task = _build_math(spec.skill, k)
-                if difficulty.score(task) == spec.difficulty_target:
-                    chosen = (statement, solution, task, spec.difficulty_target)
+            for k in range(1, 9):
+                for _ in range(3):
+                    statement, solution, task = _build_math(spec.skill, k)
+                    if difficulty.score(task) == spec.difficulty_target:
+                        chosen = (statement, solution, task, spec.difficulty_target)
+                        break
+                if chosen:
                     break
             if chosen is None:
                 k = 1 + (nudge % 5)

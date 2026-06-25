@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-opus-4-8"
 
+    # Google Gemini via its OpenAI-compatible endpoint.
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
+
     database_url: str = "sqlite:///./stemgen.db"
 
     # Verifier configuration

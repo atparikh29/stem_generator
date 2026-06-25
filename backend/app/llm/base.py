@@ -42,8 +42,8 @@ class LLMProvider(Protocol):
 
 
 def get_provider(override: str | None = None) -> LLMProvider:
-    """Return the LLM provider. `override` (mock|openai|anthropic) lets a request
-    pick a model regardless of the .env default."""
+    """Return the LLM provider. `override` (mock|openai|anthropic|gemini) lets a
+    request pick a model regardless of the .env default."""
     provider = (override or settings.llm_provider).lower()
     if provider == "mock":
         from .mock import MockProvider
@@ -57,4 +57,8 @@ def get_provider(override: str | None = None) -> LLMProvider:
         from .anthropic_provider import AnthropicProvider
 
         return AnthropicProvider()
+    if provider == "gemini":
+        from .gemini_provider import GeminiProvider
+
+        return GeminiProvider()
     raise ValueError(f"unknown LLM_PROVIDER: {settings.llm_provider}")
