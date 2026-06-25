@@ -32,6 +32,9 @@ class Event(SQLModel, table=True):
 
 
 class Student(SQLModel, table=True):
+    """A learner session. Identified by `id` (stored in the browser for returning
+    sessions). Carries the saved state the flowchart restores on return."""
+
     __tablename__ = "students"
 
     id: str = Field(primary_key=True)
@@ -40,6 +43,13 @@ class Student(SQLModel, table=True):
     skill_vector: dict[str, float] = Field(default_factory=dict, sa_column=Column(JSON))
     misconceptions: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     interests: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    # Saved session state (restored for returning sessions; set at onboarding /
+    # adjusted via settings changes).
+    onboarded: bool = False
+    current_context_id: str = ""
+    current_skill: str = ""
+    current_difficulty: int = 0
+    current_model: str = ""
     created_at: datetime = Field(default_factory=_utcnow)
 
 

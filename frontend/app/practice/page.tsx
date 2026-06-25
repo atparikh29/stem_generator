@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { api, API_BASE, Problem } from "../../lib/api";
+import { api, Problem } from "../../lib/api";
+
+const SESSION_KEY = "stemgen.sessionId";
+
+type View = "loading" | "onboarding" | "welcome" | "settings" | "practice";
 
 interface Attempt {
   status: string;
@@ -14,55 +18,117 @@ interface Attempt {
   details?: { code: string; label: string; detail?: string }[];
 }
 
+interface Ctx { id: string; noun: string; narrative: string; interest_tags: string[] }
+interface Skill { id: string; domain: string; method: string }
+
 export default function Practice() {
-  const [studentId, setStudentId] = useState<string | null>(null);
+  const [view, setView] = useState<View>("loading");
+  const [sessionId, setSessionId] = useState<string | null>(null);
+
+  const [contexts, setContexts] = useState<Ctx[]>([]);
+  const [skills, setSkills] = useState<Skill[]>([]);
+
+  // chosen / saved settings
+  const [ctx, setCtx] = useState("generic");
+  const [skill, setSkill] = useState("kinematics");
+  const [difficulty, setDifficulty] = useState(1);
+  const [model, setModel] = useState("mock");
+
+  // practice state
   const [problem, setProblem] = useState<Problem | null>(null);
   const [attempts, setAttempts] = useState<Attempt[]>([]);
-  const [regen, setRegen] = useState<number | null>(null);
   const [answer, setAnswer] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [regen, setRegen] = useState<number | null>(null);
 
-  // Demo controls
-  const [model, setModel] = useState("mock");
-  const [skillSel, setSkillSel] = useState("auto");
-  const [diffSel, setDiffSel] = useState("auto");
-  const [skills, setSkills] = useState<{ id: string; domain: string; method: string }[]>([]);
-
+  // ---- bootstrap: load catalogs + detect returning session ----
   useEffect(() => {
-    api.skills().then(setSkills).catch(() => {});
+    Promise.all([api.contexts().catch(() => []), api.skills().catch(() => [])]).then(
+      ([cs, sk]) => {
+        setContexts(cs);
+        setSkills(sk);
+      }
+    );
+    const id = localStorage.getItem(SESSION_KEY);
+    if (!id) {
+      setView("onboarding");
+      return;
+    }
+    api
+      .getSession(id)
+      .then((s) => {
+        setSessionId(id);
+        setCtx(s.current_context_id || "generic");
+        setSkill(s.current_skill || "kinematics");
+        setDifficulty(s.current_difficulty || 1);
+        setModel(s.current_model || "mock");
+        setView("welcome");
+      })
+      .catch(() => {
+        localStorage.removeItem(SESSION_KEY);
+        setView("onboarding");
+      });
   }, []);
 
-  async function start() {
+  function resetProblemState() {
+    setProblem(null);
+    setAttempts([]);
+    setAnswer("");
+    setFeedback(null);
+    setRegen(null);
+  }
+
+  // ---- onboarding -> create session -> instant pre-stored problem ----
+  async function beginSession() {
     setBusy(true);
     try {
-      const s = await api.createStudent("Pilot Student", ["sports", "skateboarding"]);
-      setStudentId(s.id);
-      loadNext(s.id);
+      const s = await api.createSession({ context_id: ctx, skill, difficulty, model });
+      localStorage.setItem(SESSION_KEY, s.id);
+      setSessionId(s.id);
+      await fetchPreStored(s.id);
     } finally {
-      // streaming sets busy=false when it finishes
+      setBusy(false);
     }
   }
 
-  // Stream the regenerate-until-valid loop live via Server-Sent Events.
-  function loadNext(id: string) {
+  // ---- adjust settings -> instant pre-stored problem ----
+  async function applySettings() {
+    if (!sessionId) return;
     setBusy(true);
-    setProblem(null);
-    setAttempts([]);
-    setRegen(null);
-    setFeedback(null);
-    setAnswer("");
+    try {
+      await api.adjustSettings(sessionId, { context_id: ctx, skill, difficulty, model });
+      await fetchPreStored(sessionId);
+    } finally {
+      setBusy(false);
+    }
+  }
 
-    const params = new URLSearchParams();
-    if (model) params.set("provider", model);
-    if (skillSel !== "auto") params.set("skill", skillSel);
-    if (diffSel !== "auto") params.set("difficulty", diffSel);
-    const es = new EventSource(`${API_BASE}/students/${id}/next-problem/stream?${params}`);
+  // ---- pre-stored: instant, already verified ----
+  async function fetchPreStored(id: string) {
+    resetProblemState();
+    setView("practice");
+    setBusy(true);
+    try {
+      const res = await api.preStored(id, { skill, difficulty, context: ctx });
+      if (res.accepted) setProblem(res.problem as Problem);
+      setRegen(0);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // ---- continue: Planner picks; stream the live LLM loop ----
+  function continueLoop() {
+    if (!sessionId) return;
+    resetProblemState();
+    setView("practice");
+    setBusy(true);
+    const es = new EventSource(api.sessionStreamUrl(sessionId));
     es.onmessage = (e) => {
       const ev = JSON.parse(e.data);
-      if (ev.type === "progress") {
-        setAttempts((a) => [...a, ev as Attempt]);
-      } else if (ev.type === "result") {
+      if (ev.type === "progress") setAttempts((a) => [...a, ev as Attempt]);
+      else if (ev.type === "result") {
         if (ev.accepted) setProblem(ev.problem as Problem);
         setRegen(ev.regen_count);
         setBusy(false);
@@ -79,10 +145,10 @@ export default function Practice() {
   }
 
   async function submit() {
-    if (!studentId || !problem) return;
+    if (!sessionId || !problem) return;
     setBusy(true);
     try {
-      const res = await api.submitAttempt(studentId, problem.id, answer);
+      const res = await api.sessionAttempt(sessionId, problem.id, answer);
       setFeedback(
         res.correct ? "✅ Correct!" : `❌ ${res.detail} (new mastery: ${res.new_mastery})`
       );
@@ -91,161 +157,133 @@ export default function Practice() {
     }
   }
 
-  function row(key: number, accent: string, children: ReactNode) {
+  function resetSession() {
+    localStorage.removeItem(SESSION_KEY);
+    setSessionId(null);
+    resetProblemState();
+    setView("onboarding");
+  }
+
+  // ---------- shared UI bits ----------
+  const sel = { padding: 6, marginLeft: 6 } as const;
+  const domains = Array.from(new Set(skills.map((s) => s.domain)));
+
+  function settingsForm(submitLabel: string, onSubmit: () => void) {
     return (
-      <div
-        key={key}
-        style={{
-          borderLeft: `3px solid ${accent}`,
-          padding: "6px 10px",
-          margin: "4px 0",
-          background: "#fff",
-          borderRadius: 4,
-        }}
-      >
-        {children}
-      </div>
+      <section style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center",
+        padding: "12px 14px", background: "#eef2ff", border: "1px solid #c7d2fe",
+        borderRadius: 10, marginBottom: 16 }}>
+        <label>Context
+          <select value={ctx} onChange={(e) => setCtx(e.target.value)} style={sel}>
+            {contexts.map((c) => <option key={c.id} value={c.id}>{c.id}</option>)}
+          </select>
+        </label>
+        <label>Skill
+          <select value={skill} onChange={(e) => setSkill(e.target.value)} style={sel}>
+            {domains.map((d) => (
+              <optgroup key={d} label={d}>
+                {skills.filter((s) => s.domain === d).map((s) => (
+                  <option key={s.id} value={s.id}>{s.id}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </label>
+        <label>Difficulty
+          <select value={difficulty} onChange={(e) => setDifficulty(Number(e.target.value))} style={sel}>
+            {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+        <label>Model
+          <select value={model} onChange={(e) => setModel(e.target.value)} style={sel}>
+            <option value="mock">Mock (instant)</option>
+            <option value="openai">Llama (local)</option>
+            <option value="anthropic">Claude (needs key)</option>
+          </select>
+        </label>
+        <button onClick={onSubmit} disabled={busy}>{submitLabel}</button>
+      </section>
     );
   }
 
-  function renderAttempt(a: Attempt, i: number) {
-    const tag = (n?: number) => (
-      <span style={{ color: "#6b7280", fontVariantNumeric: "tabular-nums" }}>
-        attempt {n}
-      </span>
+  function row(key: number, accent: string, children: ReactNode) {
+    return (
+      <div key={key} style={{ borderLeft: `3px solid ${accent}`, padding: "6px 10px",
+        margin: "4px 0", background: "#fff", borderRadius: 4 }}>{children}</div>
     );
+  }
+  function renderAttempt(a: Attempt, i: number) {
+    const t = (n?: number) => <span style={{ color: "#6b7280" }}>attempt {n}</span>;
     if (a.status === "plan")
-      return row(i, "#9ca3af",
-        <span style={{ color: "#374151" }}>
-          🧭 Planner selected <b>{a.skill}</b> · difficulty {a.difficulty_target}
-        </span>);
+      return row(i, "#9ca3af", <span>🧭 Planner selected <b>{a.skill}</b> · difficulty {a.difficulty_target}</span>);
     if (a.status === "generating")
-      return row(i, "#f59e0b",
-        <span style={{ color: "#92400e" }}>{tag(a.attempt)} · generating… <span className="pulse">⏳</span></span>);
+      return row(i, "#f59e0b", <span style={{ color: "#92400e" }}>{t(a.attempt)} · generating… <span className="pulse">⏳</span></span>);
     if (a.status === "accepted")
-      return row(i, "#16a34a",
-        <span style={{ color: "#166534", fontWeight: 600 }}>{tag(a.attempt)} · ✓ accepted &amp; delivered</span>);
+      return row(i, "#16a34a", <span style={{ color: "#166534", fontWeight: 600 }}>{t(a.attempt)} · ✓ accepted</span>);
     if (a.status === "rejected")
       return row(i, "#dc2626",
         <div>
-          <span style={{ color: "#991b1b", fontWeight: 600 }}>{tag(a.attempt)} · ✗ rejected</span>
-          {a.statement && (
-            <div style={{ color: "#6b7280", fontSize: 13, margin: "3px 0" }}>
-              “{a.statement.slice(0, 90)}…” &nbsp;→&nbsp; claimed <b>{a.answer}</b>
-            </div>
-          )}
+          <span style={{ color: "#991b1b", fontWeight: 600 }}>{t(a.attempt)} · ✗ rejected</span>
+          {a.statement && <div style={{ color: "#6b7280", fontSize: 13 }}>“{a.statement.slice(0, 90)}…” → claimed <b>{a.answer}</b></div>}
           {(a.details || []).map((d, j) => (
-            <div key={j} style={{ fontSize: 13, color: "#b91c1c" }}>
-              • <b>{d.code}</b>{d.detail ? ` — ${d.detail}` : ` — ${d.label}`}
-            </div>
+            <div key={j} style={{ fontSize: 13, color: "#b91c1c" }}>• <b>{d.code}</b>{d.detail ? ` — ${d.detail}` : ` — ${d.label}`}</div>
           ))}
-          {!a.details && a.failures && (
-            <div style={{ fontSize: 13, color: "#b91c1c" }}>• {a.failures.join(", ")}</div>
-          )}
         </div>);
     if (a.status === "exhausted")
-      return row(i, "#dc2626",
-        <span style={{ color: "#991b1b" }}>⚠ Budget exhausted — no valid problem this round. Click Next to retry.</span>);
+      return row(i, "#dc2626", <span style={{ color: "#991b1b" }}>⚠ Budget exhausted — click “Continue” to retry.</span>);
     return null;
   }
 
-  const domains = Array.from(new Set(skills.map((s) => s.domain)));
-  const selStyle = { padding: 6, marginLeft: 6 } as const;
-  const controls = (
-    <section
-      style={{
-        display: "flex",
-        gap: 18,
-        flexWrap: "wrap",
-        alignItems: "center",
-        padding: "12px 14px",
-        background: "#eef2ff",
-        border: "1px solid #c7d2fe",
-        borderRadius: 10,
-        marginBottom: 16,
-      }}
-    >
-      <label>
-        Model
-        <select value={model} onChange={(e) => setModel(e.target.value)} disabled={busy} style={selStyle}>
-          <option value="mock">Mock (instant, offline)</option>
-          <option value="openai">Llama (local, slow)</option>
-          <option value="anthropic">Claude (needs key)</option>
-        </select>
-      </label>
-      <label>
-        Skill
-        <select value={skillSel} onChange={(e) => setSkillSel(e.target.value)} disabled={busy} style={selStyle}>
-          <option value="auto">Auto (planner picks)</option>
-          <option value="random">🎲 Random</option>
-          {domains.map((d) => (
-            <optgroup key={d} label={d}>
-              {skills
-                .filter((s) => s.domain === d)
-                .map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.id}
-                  </option>
-                ))}
-            </optgroup>
-          ))}
-        </select>
-      </label>
-      <label>
-        Difficulty
-        <select value={diffSel} onChange={(e) => setDiffSel(e.target.value)} disabled={busy} style={selStyle}>
-          <option value="auto">Auto</option>
-          {[1, 2, 3, 4, 5].map((n) => (
-            <option key={n} value={String(n)}>
-              {n}
-            </option>
-          ))}
-        </select>
-      </label>
-    </section>
+  const pulseStyle = (
+    <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}} .pulse{display:inline-block;animation:pulse 1s ease-in-out infinite}`}</style>
   );
 
-  if (!studentId) {
+  // ---------- screens ----------
+  if (view === "loading") return <main><h1>Practice</h1><p>Loading…</p></main>;
+
+  if (view === "onboarding")
     return (
       <main>
-        <h1>Practice</h1>
-        {controls}
-        <button onClick={start} disabled={busy}>
-          {busy ? "Starting…" : "Begin session"}
-        </button>
+        <h1>Welcome 👋</h1>
+        <p>Pick your starting context, skill, and difficulty. Your first problem is served instantly from a pre-verified bank.</p>
+        {settingsForm(busy ? "Starting…" : "Start practicing →", beginSession)}
       </main>
     );
-  }
 
+  if (view === "welcome")
+    return (
+      <main>
+        <h1>Welcome back 👋</h1>
+        <p>Saved settings: <b>{skill}</b> · difficulty {difficulty} · context {ctx} · model {model}.</p>
+        <p>Change settings before your next problem?</p>
+        <button onClick={() => setView("settings")}>Yes, change settings</button>{" "}
+        <button onClick={continueLoop} disabled={busy}>No, continue →</button>
+        <p><button onClick={resetSession} style={{ fontSize: 12 }}>Reset session</button></p>
+      </main>
+    );
+
+  if (view === "settings")
+    return (
+      <main>
+        <h1>Adjust settings</h1>
+        {settingsForm(busy ? "Loading…" : "Apply & get a problem →", applySettings)}
+        <button onClick={() => setView("practice")} disabled={!problem}>Cancel</button>
+      </main>
+    );
+
+  // practice
   return (
     <main>
       <h1>Practice</h1>
-      {controls}
+      {pulseStyle}
 
-      <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}} .pulse{display:inline-block;animation:pulse 1s ease-in-out infinite}`}</style>
-
-      {/* Live loop progress (most useful with a slow real model) */}
       {(busy || attempts.length > 0) && !problem && (
-        <section
-          style={{
-            background: "#f3f4f6",
-            border: "1px solid #e5e7eb",
-            padding: 14,
-            borderRadius: 10,
-            marginBottom: 16,
-            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-            fontSize: 14,
-          }}
-        >
-          <p style={{ margin: "0 0 8px", fontWeight: 700, fontFamily: "system-ui, sans-serif" }}>
-            {busy ? (
-              <>
-                <span className="pulse">⏳</span> Regenerate-until-valid loop — the verifier
-                is checking each candidate live
-              </>
-            ) : (
-              "Loop finished"
-            )}
+        <section style={{ background: "#f3f4f6", border: "1px solid #e5e7eb", padding: 14,
+          borderRadius: 10, marginBottom: 16, fontFamily: "ui-monospace, Menlo, monospace", fontSize: 14 }}>
+          <p style={{ margin: "0 0 8px", fontWeight: 700, fontFamily: "system-ui" }}>
+            {attempts.length > 0
+              ? <><span className="pulse">⏳</span> Regenerate-until-valid loop (verifier checking each candidate)</>
+              : <><span className="pulse">⏳</span> Fetching a verified problem…</>}
           </p>
           {attempts.map(renderAttempt)}
         </section>
@@ -255,32 +293,21 @@ export default function Practice() {
         <section>
           <p style={{ color: "#666", fontSize: 14 }}>
             {problem.domain} · {problem.skill} · difficulty {problem.difficulty_target}
-            {regen != null && ` · verified after ${regen} regeneration${regen === 1 ? "" : "s"}`}
+            {regen === 0 ? " · pre-stored (instant)" : regen != null ? ` · verified after ${regen} regeneration${regen === 1 ? "" : "s"}` : ""}
           </p>
           <p style={{ fontSize: 18 }}>{problem.statement}</p>
-          <input
-            value={answer}
-            onChange={(e) => setAnswer(e.target.value)}
-            placeholder="Your answer"
-            style={{ padding: 8, width: "60%" }}
-          />{" "}
-          <button onClick={submit} disabled={busy || !answer}>
-            Submit
-          </button>
+          <input value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="Your answer"
+            style={{ padding: 8, width: "60%" }} />{" "}
+          <button onClick={submit} disabled={busy || !answer}>Submit</button>
           {feedback && <p>{feedback}</p>}
-          {feedback && (
-            <details>
-              <summary>Show solution</summary>
-              <p>{problem.solution}</p>
-            </details>
-          )}
+          {feedback && <details><summary>Show solution</summary><p>{problem.solution}</p></details>}
         </section>
       )}
 
-      <p>
-        <button onClick={() => loadNext(studentId)} disabled={busy}>
-          Next problem →
-        </button>
+      <p style={{ marginTop: 20 }}>
+        <button onClick={continueLoop} disabled={busy}>Next problem (continue) →</button>{" "}
+        <button onClick={() => setView("settings")} disabled={busy}>Change settings</button>{" "}
+        <button onClick={resetSession} style={{ fontSize: 12 }}>Reset session</button>
       </p>
     </main>
   );

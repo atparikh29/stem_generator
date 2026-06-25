@@ -20,6 +20,7 @@ from typing import Callable, Optional
 
 from sqlmodel import Session, select
 
+from ..content import problem_bank
 from ..content.skills import SKILLS, domain_of, method_of
 from ..llm.base import GenerationSpec, LLMProvider
 from ..llm.prompt import build_generation_prompt
@@ -176,7 +177,8 @@ def generate_next_problem(
                 session.add(problem)
                 session.commit()
                 session.refresh(problem)
-            _log(session, student.id, "deliver", {"problem_id": problem.id, "skill": skill, "regen_count": attempt})
+            _log(session, student.id, "deliver",
+                 {"problem_id": problem.id, "skill": skill, "regen_count": attempt, "source": "llm"})
             return GenerationResult(True, problem, report, attempt, attempts)
 
         # Feed the SPECIFIC reason back to the model (not just the code) so it can
@@ -207,3 +209,48 @@ def generate_next_problem(
         session.commit()
         session.refresh(failed)
     return GenerationResult(False, failed, last_report, max_regenerations, attempts)
+
+
+def fetch_pre_stored(
+    student: Student,
+    skill: str,
+    difficulty: int,
+    context_id: str = "",
+    session: Optional[Session] = None,
+    provider: Optional[LLMProvider] = None,
+) -> GenerationResult:
+    """Deliver an already-verified problem from the bank -- instant, no LLM loop.
+
+    Used for onboarding and after a settings change. Falls back to the full LLM
+    loop only if the bank has nothing for the skill (so the UI never dead-ends).
+    """
+    _log(session, student.id, "observe", {"skill_vector": student.skill_vector or {}})
+    entry = problem_bank.fetch(skill, difficulty, context_id or None)
+    if entry is None:
+        if provider is not None:
+            return generate_next_problem(student, provider, session=session,
+                                         skill_override=skill, difficulty_override=difficulty)
+        # No bank entry and no provider: report an empty failure rather than crash.
+        return GenerationResult(False, None, VerifierReport(accepted=False), 0, [])
+
+    problem = ProblemRecord(
+        student_id=student.id,
+        domain=domain_of(skill).value,
+        skill=skill,
+        difficulty_target=entry["difficulty"],
+        difficulty_observed=entry["difficulty"],
+        context_id=entry.get("context_id", context_id),
+        statement=entry["statement"],
+        task=entry["task"],
+        solution=entry["solution"],
+        status="delivered",
+        failure_reasons=[],
+        regen_count=0,
+    )
+    if session is not None:
+        session.add(problem)
+        session.commit()
+        session.refresh(problem)
+    _log(session, student.id, "deliver",
+         {"problem_id": problem.id, "skill": skill, "regen_count": 0, "source": "pre_stored"})
+    return GenerationResult(True, problem, VerifierReport(accepted=True), 0, [])

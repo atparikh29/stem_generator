@@ -36,4 +36,34 @@ export const api = {
   events: (studentId: string) => req(`/students/${studentId}/events`),
 
   skills: (): Promise<{ id: string; domain: string; method: string }[]> => req("/skills"),
+
+  contexts: (): Promise<{ id: string; noun: string; narrative: string; interest_tags: string[] }[]> =>
+    req("/contexts"),
+
+  // ----- session flow -----
+  createSession: (body: {
+    name?: string; context_id: string; skill: string; difficulty: number; model: string;
+  }) => req("/sessions", { method: "POST", body: JSON.stringify(body) }),
+
+  getSession: (id: string) => req(`/sessions/${id}`),
+
+  adjustSettings: (id: string, body: {
+    context_id?: string; skill?: string; difficulty?: number; model?: string;
+  }) => req(`/sessions/${id}/settings`, { method: "POST", body: JSON.stringify(body) }),
+
+  preStored: (id: string, opts: { skill?: string; difficulty?: number; context?: string } = {}) => {
+    const p = new URLSearchParams();
+    if (opts.skill) p.set("skill", opts.skill);
+    if (opts.difficulty) p.set("difficulty", String(opts.difficulty));
+    if (opts.context) p.set("context", opts.context);
+    return req(`/sessions/${id}/pre-stored?${p}`);
+  },
+
+  sessionAttempt: (id: string, problemId: number, answer: string) =>
+    req(`/sessions/${id}/attempts`, {
+      method: "POST",
+      body: JSON.stringify({ problem_id: problemId, answer }),
+    }),
+
+  sessionStreamUrl: (id: string) => `${API_BASE}/sessions/${id}/next-problem/stream`,
 };

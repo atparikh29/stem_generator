@@ -17,10 +17,11 @@ app = FastAPI(
     description="Neuro-symbolic agentic pipeline for reliable STEM problem generation.",
 )
 
-# Permissive CORS for local Next.js dev. Restrict in production.
+# Permissive CORS for local Next.js dev (localhost OR 127.0.0.1, any port).
+# Restrict in production.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
     allow_methods=["*"],
     allow_headers=["*"],
 )
