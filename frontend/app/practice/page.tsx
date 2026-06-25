@@ -263,7 +263,7 @@ export default function Practice() {
         <p>Saved settings: <b>{skill}</b> · difficulty {difficulty} · context {ctx} · model {model}.</p>
         <p>Change settings before your next problem?</p>
         <button onClick={() => setView("settings")}>Yes, change settings</button>{" "}
-        <button onClick={continueLoop} disabled={busy}>No, continue →</button>
+        <button onClick={() => sessionId && fetchPreStored(sessionId)} disabled={busy}>No, continue →</button>
         <p><button onClick={resetSession} style={{ fontSize: 12 }}>Reset session</button></p>
       </main>
     );
@@ -315,7 +315,12 @@ export default function Practice() {
       )}
 
       <p style={{ marginTop: 20 }}>
-        <button onClick={continueLoop} disabled={busy}>Next problem (continue) →</button>{" "}
+        <button onClick={() => sessionId && fetchPreStored(sessionId)} disabled={busy}>
+          Next problem →
+        </button>{" "}
+        <button onClick={continueLoop} disabled={busy} title="The Planner picks what to practice next (changes skill/difficulty)">
+          Adaptive next (Planner) →
+        </button>{" "}
         <button onClick={() => setView("settings")} disabled={busy}>Change settings</button>{" "}
         <button onClick={resetSession} style={{ fontSize: 12 }}>Reset session</button>
       </p>
