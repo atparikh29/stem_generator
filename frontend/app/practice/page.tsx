@@ -19,7 +19,7 @@ interface Attempt {
 }
 
 interface Ctx { id: string; noun: string; narrative: string; interest_tags: string[] }
-interface Skill { id: string; domain: string; method: string }
+interface Skill { id: string; domain: string; method: string; difficulties: number[] }
 
 export default function Practice() {
   const [view, setView] = useState<View>("loading");
@@ -72,6 +72,14 @@ export default function Practice() {
         setView("onboarding");
       });
   }, []);
+
+  // Difficulties available for the currently selected skill (from the bank).
+  const availDiffs = skills.find((s) => s.id === skill)?.difficulties ?? [1, 2, 3, 4, 5];
+
+  // Clamp the chosen difficulty to what the selected skill actually offers.
+  useEffect(() => {
+    if (skills.length && !availDiffs.includes(difficulty)) setDifficulty(availDiffs[0]);
+  }, [skills, skill]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function resetProblemState() {
     setProblem(null);
@@ -205,8 +213,13 @@ export default function Practice() {
         </label>
         <label>Difficulty
           <select value={difficulty} onChange={(e) => setDifficulty(Number(e.target.value))} style={sel}>
-            {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
+            {availDiffs.map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
+          {availDiffs.length < 5 && (
+            <span style={{ color: "#6b7280", fontSize: 12, marginLeft: 6 }}>
+              (only {availDiffs.join(", ")} available)
+            </span>
+          )}
         </label>
         <label>Model
           <select value={model} onChange={(e) => setModel(e.target.value)} style={sel}>

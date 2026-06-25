@@ -16,6 +16,7 @@ from sqlmodel import Session, select
 
 from ..agents import assessor, grader, orchestrator
 from ..config import settings
+from ..content import problem_bank
 from ..content.skills import SKILLS, all_skills
 from ..db import engine, get_session
 from ..llm.base import get_provider
@@ -122,8 +123,14 @@ def next_problem(student_id: str, session: Session = Depends(get_session)):
 
 @router.get("/skills")
 def list_skills():
-    """Skill catalog for the demo UI's dropdown."""
-    return [{"id": s, "domain": m["domain"].value, "method": m["method"]} for s, m in SKILLS.items()]
+    """Skill catalog for the UI, with the difficulties available per skill in the
+    pre-stored bank (so the difficulty menu can be clamped to what exists)."""
+    avail: dict[str, set] = {}
+    for p in problem_bank.load():
+        avail.setdefault(p["skill"], set()).add(p["difficulty"])
+    return [{"id": s, "domain": m["domain"].value, "method": m["method"],
+             "difficulties": sorted(avail.get(s)) or [1, 2, 3, 4, 5]}
+            for s, m in SKILLS.items()]
 
 
 def _resolve_skill(skill: Optional[str]) -> Optional[str]:
