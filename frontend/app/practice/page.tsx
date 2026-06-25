@@ -122,15 +122,23 @@ export default function Practice() {
     }
   }
 
-  // ---- continue: Planner picks; stream the live LLM loop ----
-  function continueLoop() {
+  // ---- "Next problem": keep settings. Mock = instant bank; real model = generate live. ----
+  function nextSameSettings() {
+    if (!sessionId) return;
+    if (model === "mock") fetchPreStored(sessionId);
+    else streamProblem({ skill, difficulty });
+  }
+
+  // ---- stream the live LLM loop with the session's model ----
+  // opts.skill/difficulty -> keep the user's settings; empty -> Planner (adaptive).
+  function streamProblem(opts: { skill?: string; difficulty?: number } = {}) {
     if (!sessionId) return;
     resetProblemState();
     setSource("llm");
-    setRequestedDiff(null);
+    setRequestedDiff(opts.difficulty ?? null);
     setView("practice");
     setBusy(true);
-    const es = new EventSource(api.sessionStreamUrl(sessionId));
+    const es = new EventSource(api.sessionStreamUrl(sessionId, opts));
     es.onmessage = (e) => {
       const ev = JSON.parse(e.data);
       if (ev.type === "progress") setAttempts((a) => [...a, ev as Attempt]);
@@ -263,7 +271,7 @@ export default function Practice() {
         <p>Saved settings: <b>{skill}</b> · difficulty {difficulty} · context {ctx} · model {model}.</p>
         <p>Change settings before your next problem?</p>
         <button onClick={() => setView("settings")}>Yes, change settings</button>{" "}
-        <button onClick={() => sessionId && fetchPreStored(sessionId)} disabled={busy}>No, continue →</button>
+        <button onClick={nextSameSettings} disabled={busy}>No, continue →</button>
         <p><button onClick={resetSession} style={{ fontSize: 12 }}>Reset session</button></p>
       </main>
     );
@@ -315,10 +323,12 @@ export default function Practice() {
       )}
 
       <p style={{ marginTop: 20 }}>
-        <button onClick={() => sessionId && fetchPreStored(sessionId)} disabled={busy}>
+        <button onClick={nextSameSettings} disabled={busy}
+          title={model === "mock" ? "Instant from the verified bank" : `Generate with ${model} at your skill/difficulty`}>
           Next problem →
         </button>{" "}
-        <button onClick={continueLoop} disabled={busy} title="The Planner picks what to practice next (changes skill/difficulty)">
+        <button onClick={() => streamProblem({})} disabled={busy}
+          title="The Planner picks what to practice next (changes skill/difficulty)">
           Adaptive next (Planner) →
         </button>{" "}
         <button onClick={() => setView("settings")} disabled={busy}>Change settings</button>{" "}

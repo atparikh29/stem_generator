@@ -323,13 +323,21 @@ def fetch_pre_stored(
 
 
 @router.get("/sessions/{session_id}/next-problem/stream")
-def session_next_problem_stream(session_id: str, session: Session = Depends(get_session)):
-    """Continue (no settings change): the Planner picks; stream the LLM loop."""
+def session_next_problem_stream(
+    session_id: str,
+    skill: Optional[str] = Query(None),
+    difficulty: Optional[int] = Query(None, ge=1, le=5),
+    session: Session = Depends(get_session),
+):
+    """Stream the LLM loop with the session's model.
+
+    With skill/difficulty query params -> generate at those settings (keeps the
+    user's choice). Without -> the Planner picks (adaptive).
+    """
     student = session.get(Student, session_id)
     if not student:
         raise HTTPException(404, "session not found")
-    # Planner chooses skill & difficulty -> no override here.
-    return _problem_stream(session_id, student.current_model or None, None, None)
+    return _problem_stream(session_id, student.current_model or None, _resolve_skill(skill), difficulty)
 
 
 @router.post("/sessions/{session_id}/attempts")

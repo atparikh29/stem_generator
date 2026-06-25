@@ -65,5 +65,11 @@ export const api = {
       body: JSON.stringify({ problem_id: problemId, answer }),
     }),
 
-  sessionStreamUrl: (id: string) => `${API_BASE}/sessions/${id}/next-problem/stream`,
+  sessionStreamUrl: (id: string, opts: { skill?: string; difficulty?: number } = {}) => {
+    const p = new URLSearchParams();
+    if (opts.skill) p.set("skill", opts.skill);
+    if (opts.difficulty) p.set("difficulty", String(opts.difficulty));
+    const qs = p.toString();
+    return `${API_BASE}/sessions/${id}/next-problem/stream${qs ? `?${qs}` : ""}`;
+  },
 };
