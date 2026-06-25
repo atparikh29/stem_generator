@@ -41,6 +41,8 @@ export default function Practice() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [regen, setRegen] = useState<number | null>(null);
+  const [source, setSource] = useState<"pre_stored" | "llm" | null>(null);
+  const [requestedDiff, setRequestedDiff] = useState<number | null>(null);
 
   // ---- bootstrap: load catalogs + detect returning session ----
   useEffect(() => {
@@ -107,6 +109,8 @@ export default function Practice() {
   // ---- pre-stored: instant, already verified ----
   async function fetchPreStored(id: string) {
     resetProblemState();
+    setSource("pre_stored");
+    setRequestedDiff(difficulty);
     setView("practice");
     setBusy(true);
     try {
@@ -122,6 +126,8 @@ export default function Practice() {
   function continueLoop() {
     if (!sessionId) return;
     resetProblemState();
+    setSource("llm");
+    setRequestedDiff(null);
     setView("practice");
     setBusy(true);
     const es = new EventSource(api.sessionStreamUrl(sessionId));
@@ -293,7 +299,11 @@ export default function Practice() {
         <section>
           <p style={{ color: "#666", fontSize: 14 }}>
             {problem.domain} · {problem.skill} · difficulty {problem.difficulty_target}
-            {regen === 0 ? " · pre-stored (instant)" : regen != null ? ` · verified after ${regen} regeneration${regen === 1 ? "" : "s"}` : ""}
+            {source === "pre_stored" ? " · pre-stored (instant)"
+              : regen != null ? ` · verified after ${regen} regeneration${regen === 1 ? "" : "s"}` : ""}
+            {source === "pre_stored" && requestedDiff != null && problem.difficulty_target !== requestedDiff && (
+              <span style={{ color: "#b45309" }}> · closest available (you picked {requestedDiff})</span>
+            )}
           </p>
           <p style={{ fontSize: 18 }}>{problem.statement}</p>
           <input value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="Your answer"
