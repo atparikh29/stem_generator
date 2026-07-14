@@ -6,14 +6,13 @@ simple exponential moving average so recent performance dominates.
 """
 from __future__ import annotations
 
+from ..config import settings
 from ..content.skills import all_skills
-
-ALPHA = 0.4  # EMA weight on the newest observation
 
 
 def initial_skill_vector() -> dict[str, float]:
     """Cold-start prior: everyone is assumed low-mastery until assessed."""
-    return {skill: 0.2 for skill in all_skills()}
+    return {skill: settings.initial_mastery for skill in all_skills()}
 
 
 def update_from_diagnostic(responses: dict[str, bool]) -> dict[str, float]:
@@ -28,12 +27,14 @@ def update_from_diagnostic(responses: dict[str, bool]) -> dict[str, float]:
 def update_mastery(skill_vector: dict[str, float], skill: str, correct: bool) -> dict[str, float]:
     """EMA update after observing one graded attempt."""
     vec = dict(skill_vector)
-    prior = vec.get(skill, 0.2)
+    prior = vec.get(skill, settings.initial_mastery)
     obs = 1.0 if correct else 0.0
-    vec[skill] = round((1 - ALPHA) * prior + ALPHA * obs, 4)
+    alpha = settings.assessor_alpha
+    vec[skill] = round((1 - alpha) * prior + alpha * obs, 4)
     return vec
 
 
-def infer_misconceptions(skill_vector: dict[str, float], threshold: float = 0.25) -> list[str]:
+def infer_misconceptions(skill_vector: dict[str, float], threshold: float | None = None) -> list[str]:
     """Tag persistently low-mastery skills as misconception areas."""
-    return [skill for skill, m in skill_vector.items() if m < threshold]
+    thr = settings.misconception_threshold if threshold is None else threshold
+    return [skill for skill, m in skill_vector.items() if m < thr]
