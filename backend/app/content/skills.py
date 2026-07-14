@@ -1,12 +1,21 @@
 """Domain scope and skill taxonomy (Section IV of the design doc).
 
-Each skill belongs to a domain and maps to a verification *method* the
-Translation Layer knows how to build. Physics skills additionally name a
-deterministic formula template.
+The taxonomy is **editable as data** in `skills.json` (skill_id -> domain,
+verification method, and physics template). `method` is consumed by the
+translation layer / verifier; physics skills additionally name a deterministic
+formula template.
+
+Editing skills.json can re-point an existing skill's domain/method/template. A
+genuinely NEW skill still needs a verifier method + a mock builder (see
+"Adding a skill" in CLAUDE.md) -- the taxonomy alone doesn't implement it.
 """
 from __future__ import annotations
 
+import json
 from enum import Enum
+from pathlib import Path
+
+_SKILLS_PATH = Path(__file__).resolve().parent / "skills.json"
 
 
 class Domain(str, Enum):
@@ -15,27 +24,13 @@ class Domain(str, Enum):
     PHYSICS = "physics"
 
 
-# skill_id -> metadata. `method` is consumed by the translation layer / verifier.
-SKILLS: dict[str, dict] = {
-    # ----- Precalculus -----
-    "trig_equations": {"domain": Domain.PRECALCULUS, "method": "solve_equation"},
-    "trig_identities": {"domain": Domain.PRECALCULUS, "method": "simplify"},
-    "exp_log_equations": {"domain": Domain.PRECALCULUS, "method": "solve_equation"},
-    "vectors": {"domain": Domain.PRECALCULUS, "method": "simplify"},
-    "function_transformations": {"domain": Domain.PRECALCULUS, "method": "simplify"},
-    # ----- Single-variable Calculus -----
-    "limits": {"domain": Domain.CALCULUS, "method": "limit"},
-    "derivative_rules": {"domain": Domain.CALCULUS, "method": "derivative"},
-    "tangent_line": {"domain": Domain.CALCULUS, "method": "derivative"},
-    "optimization": {"domain": Domain.CALCULUS, "method": "solve_equation"},
-    "definite_integrals": {"domain": Domain.CALCULUS, "method": "integral"},
-    # ----- AP Physics 1 Mechanics -----
-    "kinematics": {"domain": Domain.PHYSICS, "method": "physics", "template": "kinematics"},
-    "newton_friction": {"domain": Domain.PHYSICS, "method": "physics", "template": "newton_friction"},
-    "work_energy": {"domain": Domain.PHYSICS, "method": "physics", "template": "work_energy"},
-    "impulse_momentum": {"domain": Domain.PHYSICS, "method": "physics", "template": "impulse_momentum"},
-    "circular_motion": {"domain": Domain.PHYSICS, "method": "physics", "template": "circular_motion"},
-}
+def _load() -> dict[str, dict]:
+    raw = json.loads(_SKILLS_PATH.read_text())
+    return {sid: {**meta, "domain": Domain(meta["domain"])} for sid, meta in raw.items()}
+
+
+# skill_id -> metadata (domain as a Domain enum, matching the rest of the code).
+SKILLS: dict[str, dict] = _load()
 
 
 def all_skills() -> list[str]:

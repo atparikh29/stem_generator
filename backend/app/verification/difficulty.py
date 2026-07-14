@@ -27,35 +27,10 @@ _OP_WEIGHTS = {
     sp.exp: 2.0, sp.log: 2.0,
 }
 
-# Physics templates ordered by intrinsic conceptual difficulty.
-_PHYS_BASE = {
-    "kinematics": 1.0,
-    "impulse_momentum": 1.5,
-    "work_energy": 2.0,
-    "newton_friction": 2.5,
-    "circular_motion": 3.0,
-}
-
-
-# Per-skill (lo, hi) raw-score anchors: lo = the simplest *realistic* problem for
-# this kind/template (bin 1), hi = its hardest (bin 5). Difficulty is binned
-# RELATIVE to the skill's own achievable range, so every skill can span 1..5 and
-# the planner's targets are reachable (a global scale made e.g. any limit >= bin 4
-# and any polynomial derivative <= bin 3).
-_MATH_ANCHORS = {
-    "derivative": (3.0, 14.0),
-    "integral": (3.0, 9.0),
-    "limit": (6.5, 11.0),
-    "solve_equation": (2.5, 6.0),
-    "simplify": (1.0, 13.5),
-}
-_PHYS_ANCHORS = {
-    "kinematics": (2.0, 4.5),
-    "newton_friction": (3.5, 6.0),
-    "work_energy": (2.5, 5.0),
-    "impulse_momentum": (2.0, 4.5),
-    "circular_motion": (3.5, 6.5),
-}
+# Per-skill (lo, hi) raw-score anchors and physics base scores are configurable in
+# `config.py` (difficulty_math_anchors / difficulty_phys_anchors /
+# difficulty_phys_base). Anchors bin difficulty RELATIVE to a skill's own range so
+# every skill can span 1..5 and the planner's targets are reachable.
 
 
 def _norm_bin(raw: float, lo: float, hi: float) -> int:
@@ -83,7 +58,7 @@ def _math_score(task: MathTask) -> float:
 
 
 def _physics_score(task: PhysicsTask) -> float:
-    base = _PHYS_BASE.get(task.template, 1.0)
+    base = settings.difficulty_phys_base.get(task.template, 1.0)
     chain_len = len(task.givens)          # proxy for equation chain length
     rearrangement = 0.5 if task.unknown not in ("v", "ac", "impulse", "work") else 0.0
     return base + 0.4 * chain_len + rearrangement
@@ -91,9 +66,9 @@ def _physics_score(task: PhysicsTask) -> float:
 
 def score(task: MathTask | PhysicsTask) -> int:
     if isinstance(task, MathTask):
-        lo, hi = _MATH_ANCHORS.get(task.kind, (2.5, 12.0))
+        lo, hi = settings.difficulty_math_anchors.get(task.kind, (2.5, 12.0))
         return _norm_bin(_math_score(task), lo, hi)
-    lo, hi = _PHYS_ANCHORS.get(task.template, (2.0, 5.0))
+    lo, hi = settings.difficulty_phys_anchors.get(task.template, (2.0, 5.0))
     return _norm_bin(_physics_score(task), lo, hi)
 
 

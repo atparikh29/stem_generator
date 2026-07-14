@@ -31,5 +31,26 @@ class Settings(BaseSettings):
     # for the formal experiment); 1 is more forgiving for demos / weaker models.
     difficulty_tolerance: int = 0
 
+    # Assessor (student model) tuning.
+    assessor_alpha: float = 0.4           # EMA weight on the newest observation
+    initial_mastery: float = 0.2          # cold-start mastery prior per skill
+    misconception_threshold: float = 0.25  # below this mastery -> flagged as a gap
+
+    # Difficulty scoring anchors. Each (lo, hi) is the raw-score range for a skill;
+    # difficulty is binned 1..5 relative to it. Override via env as JSON, e.g.
+    # DIFFICULTY_MATH_ANCHORS='{"derivative":[3,16]}'.
+    difficulty_math_anchors: dict[str, tuple[float, float]] = {
+        "derivative": (3.0, 14.0), "integral": (3.0, 9.0), "limit": (6.5, 11.0),
+        "solve_equation": (2.5, 6.0), "simplify": (1.0, 13.5),
+    }
+    difficulty_phys_anchors: dict[str, tuple[float, float]] = {
+        "kinematics": (2.0, 4.5), "newton_friction": (3.5, 6.0), "work_energy": (2.5, 5.0),
+        "impulse_momentum": (2.0, 4.5), "circular_motion": (3.5, 6.5),
+    }
+    difficulty_phys_base: dict[str, float] = {
+        "kinematics": 1.0, "impulse_momentum": 1.5, "work_energy": 2.0,
+        "newton_friction": 2.5, "circular_motion": 3.0,
+    }
+
 
 settings = Settings()

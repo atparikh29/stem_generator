@@ -1,0 +1,19 @@
+{
+  "trig_equations":           {"domain": "precalculus", "method": "solve_equation"},
+  "trig_identities":          {"domain": "precalculus", "method": "simplify"},
+  "exp_log_equations":        {"domain": "precalculus", "method": "solve_equation"},
+  "vectors":                  {"domain": "precalculus", "method": "simplify"},
+  "function_transformations": {"domain": "precalculus", "method": "simplify"},
+
+  "limits":                   {"domain": "calculus", "method": "limit"},
+  "derivative_rules":         {"domain": "calculus", "method": "derivative"},
+  "tangent_line":             {"domain": "calculus", "method": "derivative"},
+  "optimization":             {"domain": "calculus", "method": "solve_equation"},
+  "definite_integrals":       {"domain": "calculus", "method": "integral"},
+
+  "kinematics":        {"domain": "physics", "method": "physics", "template": "kinematics"},
+  "newton_friction":   {"domain": "physics", "method": "physics", "template": "newton_friction"},
+  "work_energy":       {"domain": "physics", "method": "physics", "template": "work_energy"},
+  "impulse_momentum":  {"domain": "physics", "method": "physics", "template": "impulse_momentum"},
+  "circular_motion":   {"domain": "physics", "method": "physics", "template": "circular_motion"}
+}
