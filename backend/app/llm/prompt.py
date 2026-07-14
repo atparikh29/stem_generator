@@ -3,10 +3,14 @@
 The generator is instructed to emit ONLY JSON validating against
 `GeneratorOutput`. We never trust the model's math: the JSON `task` carries a
 machine-checkable spec that the deterministic verifier re-derives independently.
+
+All prompt TEXT (system instruction, per-skill specs/examples, rules) is editable
+as data in `content/prompts.json`; only the assembly logic lives here.
 """
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from pydantic import ValidationError
 
@@ -14,127 +18,22 @@ from ..content.skills import SKILLS, method_of
 from ..schemas.generator import GeneratorOutput
 from .base import GenerationSpec
 
-SYSTEM_INSTRUCTION = """You are a STEM problem generator for Precalculus, \
-single-variable Calculus, and AP Physics 1 Mechanics. You output ONLY a single \
-JSON object, no prose, no markdown fences. The JSON must validate against this \
-schema:
+_PROMPTS = json.loads((Path(__file__).resolve().parent.parent / "content" / "prompts.json").read_text())
 
-{
-  "skill": str,
-  "difficulty_target": int (1-5),
-  "statement": str,            # the problem shown to the student
-  "solution": str,             # worked solution shown after answering
-  "task": {                    # machine-checkable spec
-    # MATH task:
-    "domain": "math",
-    "kind": "solve_equation"|"derivative"|"integral"|"limit"|"simplify",
-    "variable": "x",
-    "expression": str,         # use "lhs = rhs" for solve_equation
-    "interval": [a, b] | null, # required for integral; domain for solve_equation
-    "point": number | null,    # required for limit
-    "expected_answer": str     # SymPy-parseable; comma-separated set for solve_equation
-    # --- OR PHYSICS task: ---
-    "domain": "physics",
-    "template": "kinematics"|"newton_friction"|"work_energy"|"impulse_momentum"|"circular_motion",
-    "givens": {name: {"value": number, "unit": str}},
-    "unknown": str,
-    "expected_answer": {"value": number, "unit": str}
-  }
-}
-
-Rules:
-- expected_answer MUST be the correct answer; it will be verified symbolically.
-- Keep numbers physically realistic. Use SI units.
-- Personalization affects ONLY the statement's wording/context, never the skill or difficulty.
-"""
-
-# Exact, verifier-aligned spec per physics template. Using these field names
-# avoids needless rejection; computable unknowns avoid off-template questions.
-_PHYSICS_SPEC = {
-    "kinematics": 'givens keys MUST be from {"u","a","t","v","s"} (SI units m/s, m/s^2, s, m). '
-                  'unknown MUST be one of "v","s","t","a". Typical: give u,a,t and ask for v.',
-    "newton_friction": 'givens keys MUST be {"m","F_applied","mu"} (kg, N, dimensionless). '
-                       'unknown MUST be "a" or "friction".',
-    "work_energy": 'givens keys MUST be {"F","d"} (N, m) to find work, OR {"m","v"} (kg, m/s) to find ke. '
-                   'unknown MUST be "work","ke", or "v".',
-    "impulse_momentum": 'givens keys MUST be {"F","t"} (N, s) to find impulse, OR {"m","v"} (kg, m/s) to find momentum. '
-                        'unknown MUST be "impulse","momentum", or "dv".',
-    "circular_motion": 'givens keys MUST be {"v","r"} (m/s, m) to find ac, OR {"m","v","r"} to find force. '
-                       'unknown MUST be "ac" or "force". Keep v < 100 m/s and r a few meters, and use an '
-                       'everyday scenario that is realistic at those magnitudes (a ball on a string, a car '
-                       'on a curved road, a stone in a sling) — NOT a satellite or planetary orbit.',
-}
-
-# Describe each kind by its full verifiable range (SymPy handles any elementary
-# function), inviting variety rather than a fixed form.
-_MATH_SPEC = {
-    "derivative": 'kind="derivative"; differentiate ANY elementary function of the variable — '
-                  'polynomials, rationals, trig (sin/cos/tan), exp, log, and products / quotients / '
-                  'compositions (product, quotient, chain rule). expected_answer = the exact derivative.',
-    "integral": 'kind="integral"; a definite integral over interval=[a,b] of an elementary function that '
-                'HAS a closed form (polynomials, sin/cos, exp, simple rationals). expected_answer = the exact value.',
-    "limit": 'kind="limit"; a limit as the variable -> point, including indeterminate forms you resolve '
-             '(factorable rationals, standard limits). expected_answer = the limit value.',
-    "solve_equation": 'kind="solve_equation"; expression "lhs = rhs" with a UNIQUE real solution. Vary it: '
-                      'linear, quadratic, exponential, logarithmic, or trig (add interval=[a,b] for trig so the '
-                      'solution is unique). expected_answer = that solution.',
-    "simplify": 'kind="simplify"; expression and expected_answer are equivalent. Vary algebraic and trig identities.',
-}
-
-
-# A concrete, valid example per verification method/template, so the model has a
-# correct anchor for the exact skill (not just a generic one).
-_MATH_EXAMPLE = {
-    "derivative": '{"skill":"derivative_rules","difficulty_target":2,"statement":"Find the derivative of '
-                  'f(x) = x^3 + 2x with respect to x.","solution":"3x^2 + 2.","task":{"domain":"math",'
-                  '"kind":"derivative","variable":"x","expression":"x**3 + 2*x","expected_answer":"3*x**2 + 2"}}',
-    "limit": '{"skill":"limits","difficulty_target":2,"statement":"Evaluate the limit of (x^2 - 9)/(x - 3) as x '
-             'approaches 3.","solution":"Factor and cancel: 6.","task":{"domain":"math","kind":"limit",'
-             '"variable":"x","expression":"(x**2 - 9)/(x - 3)","point":3,"expected_answer":"6"}}',
-    "integral": '{"skill":"definite_integrals","difficulty_target":2,"statement":"Evaluate the definite integral '
-                'of x^2 from 0 to 2.","solution":"8/3.","task":{"domain":"math","kind":"integral","variable":"x",'
-                '"expression":"x**2","interval":[0,2],"expected_answer":"8/3"}}',
-    "solve_equation": '{"skill":"trig_equations","difficulty_target":2,"statement":"Solve sin(x) = 1/2 for x on '
-                      '[0, pi/2].","solution":"pi/6.","task":{"domain":"math","kind":"solve_equation","variable":"x",'
-                      '"expression":"sin(x) = 1/2","interval":[0,1.5708],"expected_answer":"pi/6"}}',
-    "simplify": '{"skill":"trig_identities","difficulty_target":2,"statement":"Simplify sin^2(x) + cos^2(x).",'
-                '"solution":"1.","task":{"domain":"math","kind":"simplify","variable":"x",'
-                '"expression":"sin(x)**2 + cos(x)**2","expected_answer":"1"}}',
-}
-
-_PHYSICS_EXAMPLE = {
-    "kinematics": '{"skill":"kinematics","difficulty_target":2,"statement":"A cart starts at 5 m/s and accelerates '
-                  'at 2 m/s^2 for 3 s. Find its final velocity.","solution":"11 m/s.","task":{"domain":"physics",'
-                  '"template":"kinematics","givens":{"u":{"value":5,"unit":"m/s"},"a":{"value":2,"unit":"m/s**2"},'
-                  '"t":{"value":3,"unit":"s"}},"unknown":"v","expected_answer":{"value":11,"unit":"m/s"}}}',
-    "circular_motion": '{"skill":"circular_motion","difficulty_target":3,"statement":"A 2 kg ball on a string moves '
-                       'in a circle of radius 4 m at 6 m/s. Find the centripetal force.","solution":"18 N.","task":'
-                       '{"domain":"physics","template":"circular_motion","givens":{"m":{"value":2,"unit":"kg"},'
-                       '"v":{"value":6,"unit":"m/s"},"r":{"value":4,"unit":"m"}},"unknown":"force",'
-                       '"expected_answer":{"value":18,"unit":"N"}}}',
-}
-
-# Hard constraints for math expressions (the common failure mode for weak models).
-_MATH_RULES = (
-    "MATH RULES: the expression must be a CONCRETE elementary function of the single "
-    "variable ONLY (e.g. polynomials, sin/cos/exp/log). Do NOT use undefined functions "
-    "like v(x) or f(x), do NOT introduce other letters (no h, s, t unless it is the "
-    "variable), and do NOT put '=' in a non-equation expression. This is a pure-math "
-    "problem — do NOT turn it into a physics word problem about motion/forces."
-)
+SYSTEM_INSTRUCTION = _PROMPTS["system_instruction"]
 
 
 def _task_spec(skill: str) -> str:
     if method_of(skill) == "physics":
-        return _PHYSICS_SPEC.get(SKILLS[skill].get("template", ""), "")
-    return _MATH_SPEC.get(method_of(skill), "")
+        return _PROMPTS["physics_spec"].get(SKILLS[skill].get("template", ""), "")
+    return _PROMPTS["math_spec"].get(method_of(skill), "")
 
 
 def _example(skill: str) -> str:
     if method_of(skill) == "physics":
         tmpl = SKILLS[skill].get("template", "")
-        return _PHYSICS_EXAMPLE.get(tmpl, _PHYSICS_EXAMPLE["kinematics"])
-    return _MATH_EXAMPLE.get(method_of(skill), _MATH_EXAMPLE["derivative"])
+        return _PROMPTS["physics_example"].get(tmpl, _PROMPTS["physics_example"]["kinematics"])
+    return _PROMPTS["math_example"].get(method_of(skill), _PROMPTS["math_example"]["derivative"])
 
 
 def build_generation_prompt(spec: GenerationSpec) -> str:
@@ -147,29 +46,23 @@ def build_generation_prompt(spec: GenerationSpec) -> str:
             + ". Fix exactly these issues and keep the same skill and difficulty."
         )
     is_math = method_of(spec.skill) != "physics"
-    domain_rule = (
-        _MATH_RULES if is_math
-        else "PHYSICS RULE: task.domain MUST be \"physics\" with the template below."
+    domain_rule = _PROMPTS["math_rules"] if is_math else _PROMPTS["physics_rule"]
+    match_line = (
+        "kind=" + method_of(spec.skill) if is_math
+        else "domain=physics, template=" + SKILLS[spec.skill].get("template", "")
     )
     return (
-        f"Example showing only the JSON FORMAT — do NOT reuse its specific function; "
-        f"invent a DIFFERENT, varied problem of the same kind:\n{_example(spec.skill)}\n\n"
+        f"{_PROMPTS['example_intro']}\n{_example(spec.skill)}\n\n"
         f"Generate one problem.\n"
         f"skill = {spec.skill} (verification method: {method_of(spec.skill)})\n"
-        f"The task MUST match this skill: "
-        f"{'kind=' + method_of(spec.skill) if is_math else 'domain=physics, template=' + SKILLS[spec.skill].get('template','')}.\n"
+        f"The task MUST match this skill: {match_line}.\n"
         f"TASK SPEC: {_task_spec(spec.skill)}\n"
         f"{domain_rule}\n"
         f"difficulty_target = {spec.difficulty_target}\n"
         f"context (wording/theme only) = {ctx}\n"
-        "REQUIRED: the statement must contain EVERY numeric value and unit from "
-        "givens (a student must be able to solve it from the statement alone), and "
-        "end with a clear 'Find/Determine ...' instruction. expected_answer must be "
-        "the correct, verifier-checkable answer. Choose a physically PLAUSIBLE "
-        "real-world scenario for the given magnitudes; if the context theme would be "
-        "unrealistic for these numbers, ignore the theme and pick a sensible one."
+        f"{_PROMPTS['required']}"
         f"{feedback}\n"
-        "Return ONLY the JSON object."
+        f"{_PROMPTS['footer']}"
     )
 
 

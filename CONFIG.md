@@ -48,6 +48,8 @@ Override with a JSON string, e.g.
 
 | File | Controls | How |
 |---|---|---|
+| `backend/app/content/skills.json` | skill taxonomy: `skill_id -> {domain, method, template}` | edit JSON (re-point a skill's domain/method/template) |
+| `backend/app/content/prompts.json` | ALL generator prompt text: system instruction, per-skill specs & examples, math rules, required block | edit JSON (reword prompts, no code) |
 | `backend/app/content/context_library.json` | themes/contexts (id, noun, narrative, interest tags) | edit JSON |
 | `backend/app/content/problem_bank.json` | the pre-stored validated problems | regenerate: `python -m scripts.build_problem_bank [--augment]` |
 
@@ -73,11 +75,14 @@ These are structural, not runtime knobs — edit the source and add a test:
 
 | What | File | Notes |
 |---|---|---|
-| Skill taxonomy (domain, verification method, physics template) | `content/skills.py` | see "Adding a skill" in `CLAUDE.md` |
 | Difficulty op-weights & calculus bonus | `verification/difficulty.py` | keyed by SymPy node types (not env-friendly) |
 | Physics templates & field aliases | `verification/physics_verifier.py` | one formula template per skill |
-| Prompt text & per-skill examples | `llm/prompt.py` | system instruction, task specs, math rules |
 | Mock oracle builders | `llm/mock.py` | offline generator used to seed the bank |
+
+> Note: the **skill taxonomy** and **prompt text** used to live in code but are now
+> data (`skills.json`, `prompts.json`, Layer 2). Editing them re-points existing
+> skills / rewords prompts with no code change. A genuinely NEW skill still needs a
+> verifier method + a mock builder (see "Adding a skill" in `CLAUDE.md`).
 
 ## Quick recipes
 
