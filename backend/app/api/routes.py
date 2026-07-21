@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from ..agents import assessor, grader, orchestrator
+from ..auth import hash_password, verify_password
 from ..config import settings
 from ..content import problem_bank
 from ..content.skills import SKILLS, all_skills
@@ -57,6 +58,21 @@ class SettingsBody(BaseModel):
     skill: Optional[str] = None
     difficulty: Optional[int] = None
     model: Optional[str] = None
+
+
+class RegisterBody(BaseModel):
+    username: str
+    password: str
+    name: str = ""
+    context_id: str = "generic"
+    skill: str = ""
+    difficulty: int = 0
+    model: str = ""
+
+
+class LoginBody(BaseModel):
+    username: str
+    password: str
 
 
 # ---------- students ----------
@@ -238,6 +254,47 @@ def list_events(student_id: str, limit: int = 100, session: Session = Depends(ge
         select(Event).where(Event.student_id == student_id).order_by(Event.id.desc()).limit(limit)
     ).all()
     return rows
+
+
+# ---------- auth (username / password) ----------
+
+@router.post("/auth/register")
+def register(body: RegisterBody, session: Session = Depends(get_session)):
+    """Create an account + its session. Password is stored only as a PBKDF2 hash."""
+    username = body.username.strip()
+    if not username or not body.password:
+        raise HTTPException(400, "username and password are required")
+    if session.exec(select(Student).where(Student.username == username)).first():
+        raise HTTPException(409, "username already taken")
+    student = Student(
+        id=str(uuid.uuid4()),
+        name=body.name,
+        username=username,
+        password_hash=hash_password(body.password),
+        skill_vector=assessor.initial_skill_vector(),
+        onboarded=True,
+        current_context_id=body.context_id or "generic",
+        current_skill=body.skill,
+        current_difficulty=body.difficulty,
+        current_model=body.model,
+    )
+    student.misconceptions = assessor.infer_misconceptions(student.skill_vector)
+    session.add(student)
+    session.add(Event(student_id=student.id, type="register", payload={"username": username}))
+    session.commit()
+    session.refresh(student)
+    return student
+
+
+@router.post("/auth/login")
+def login(body: LoginBody, session: Session = Depends(get_session)):
+    """Verify credentials and return the user's session (to resume saved state)."""
+    student = session.exec(select(Student).where(Student.username == body.username.strip())).first()
+    if not student or not verify_password(body.password, student.password_hash):
+        raise HTTPException(401, "invalid username or password")
+    session.add(Event(student_id=student.id, type="login", payload={"username": student.username}))
+    session.commit()
+    return student
 
 
 # ---------- sessions (the new flowchart surface) ----------

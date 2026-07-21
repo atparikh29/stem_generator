@@ -39,6 +39,9 @@ class Student(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
     name: str = ""
+    # Auth (optional): a session may be anonymous or tied to a login.
+    username: Optional[str] = Field(default=None, index=True, unique=True)
+    password_hash: str = Field(default="", exclude=True)  # excluded from API responses
     # skill -> mastery in [0, 1]
     skill_vector: dict[str, float] = Field(default_factory=dict, sa_column=Column(JSON))
     misconceptions: list[str] = Field(default_factory=list, sa_column=Column(JSON))

@@ -40,6 +40,15 @@ export const api = {
   contexts: (): Promise<{ id: string; noun: string; narrative: string; interest_tags: string[] }[]> =>
     req("/contexts"),
 
+  // ----- auth -----
+  register: (body: {
+    username: string; password: string; context_id: string; skill: string;
+    difficulty: number; model: string;
+  }) => req("/auth/register", { method: "POST", body: JSON.stringify(body) }),
+
+  login: (username: string, password: string) =>
+    req("/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
+
   // ----- session flow -----
   createSession: (body: {
     name?: string; context_id: string; skill: string; difficulty: number; model: string;

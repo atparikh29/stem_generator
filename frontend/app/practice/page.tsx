@@ -4,8 +4,9 @@ import { useEffect, useState, type ReactNode } from "react";
 import { api, Problem } from "../../lib/api";
 
 const SESSION_KEY = "stemgen.sessionId";
+const USER_KEY = "stemgen.username";
 
-type View = "loading" | "onboarding" | "welcome" | "settings" | "practice";
+type View = "loading" | "auth" | "welcome" | "settings" | "practice";
 
 interface Attempt {
   status: string;
@@ -44,6 +45,12 @@ export default function Practice() {
   const [source, setSource] = useState<"pre_stored" | "llm" | null>(null);
   const [requestedDiff, setRequestedDiff] = useState<number | null>(null);
 
+  // auth
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [authError, setAuthError] = useState<string | null>(null);
+
   // ---- bootstrap: load catalogs + detect returning session ----
   useEffect(() => {
     Promise.all([api.contexts().catch(() => []), api.skills().catch(() => [])]).then(
@@ -53,25 +60,35 @@ export default function Practice() {
       }
     );
     const id = localStorage.getItem(SESSION_KEY);
+    setUsername(localStorage.getItem(USER_KEY) || "");
     if (!id) {
-      setView("onboarding");
+      setView("auth");
       return;
     }
     api
       .getSession(id)
       .then((s) => {
-        setSessionId(id);
-        setCtx(s.current_context_id || "generic");
-        setSkill(s.current_skill || "kinematics");
-        setDifficulty(s.current_difficulty || 1);
-        setModel(s.current_model || "mock");
+        applySavedState(id, s);
         setView("welcome");
       })
       .catch(() => {
         localStorage.removeItem(SESSION_KEY);
-        setView("onboarding");
+        setView("auth");
       });
   }, []);
+
+  function applySavedState(id: string, s: any) {
+    setSessionId(id);
+    localStorage.setItem(SESSION_KEY, id);
+    if (s.username) {
+      setUsername(s.username);
+      localStorage.setItem(USER_KEY, s.username);
+    }
+    setCtx(s.current_context_id || "generic");
+    setSkill(s.current_skill || "kinematics");
+    setDifficulty(s.current_difficulty || 1);
+    setModel(s.current_model || "mock");
+  }
 
   // Difficulties available for the currently selected skill (from the bank).
   const availDiffs = skills.find((s) => s.id === skill)?.difficulties ?? [1, 2, 3, 4, 5];
@@ -89,17 +106,45 @@ export default function Practice() {
     setRegen(null);
   }
 
-  // ---- onboarding -> create session -> instant pre-stored problem ----
-  async function beginSession() {
+  // ---- register: create account + session -> instant pre-stored problem ----
+  async function doRegister() {
+    setAuthError(null);
     setBusy(true);
     try {
-      const s = await api.createSession({ context_id: ctx, skill, difficulty, model });
-      localStorage.setItem(SESSION_KEY, s.id);
-      setSessionId(s.id);
+      const s = await api.register({ username, password, context_id: ctx, skill, difficulty, model });
+      applySavedState(s.id, s);
+      setPassword("");
       await fetchPreStored(s.id);
+    } catch (e: any) {
+      setAuthError(String(e.message).includes("409") ? "That username is taken." : "Registration failed.");
+      setBusy(false);
+    }
+  }
+
+  // ---- login: verify -> resume saved session ----
+  async function doLogin() {
+    setAuthError(null);
+    setBusy(true);
+    try {
+      const s = await api.login(username, password);
+      applySavedState(s.id, s);
+      setPassword("");
+      setView("welcome");
+    } catch (e: any) {
+      setAuthError("Invalid username or password.");
     } finally {
       setBusy(false);
     }
+  }
+
+  function logout() {
+    localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(USER_KEY);
+    setSessionId(null);
+    setUsername("");
+    setPassword("");
+    resetProblemState();
+    setView("auth");
   }
 
   // ---- adjust settings -> instant pre-stored problem ----
@@ -179,13 +224,6 @@ export default function Practice() {
     }
   }
 
-  function resetSession() {
-    localStorage.removeItem(SESSION_KEY);
-    setSessionId(null);
-    resetProblemState();
-    setView("onboarding");
-  }
-
   // ---------- shared UI bits ----------
   const sel = { padding: 6, marginLeft: 6 } as const;
   const domains = Array.from(new Set(skills.map((s) => s.domain)));
@@ -229,7 +267,7 @@ export default function Practice() {
             <option value="gemini">Gemini (needs key)</option>
           </select>
         </label>
-        <button onClick={onSubmit} disabled={busy}>{submitLabel}</button>
+        {submitLabel && <button onClick={onSubmit} disabled={busy}>{submitLabel}</button>}
       </section>
     );
   }
@@ -269,24 +307,51 @@ export default function Practice() {
   // ---------- screens ----------
   if (view === "loading") return <main><h1>Practice</h1><p>Loading…</p></main>;
 
-  if (view === "onboarding")
+  if (view === "auth") {
+    const isReg = authMode === "register";
     return (
       <main>
-        <h1>Welcome 👋</h1>
-        <p>Pick your starting context, skill, and difficulty. Your first problem is served instantly from a pre-verified bank.</p>
-        {settingsForm(busy ? "Starting…" : "Start practicing →", beginSession)}
+        <h1>{isReg ? "Create account" : "Log in"}</h1>
+        <section style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 320 }}>
+          <label>Username<br />
+            <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username"
+              style={{ padding: 8, width: "100%" }} />
+          </label>
+          <label>Password<br />
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+              autoComplete={isReg ? "new-password" : "current-password"}
+              onKeyDown={(e) => e.key === "Enter" && (isReg ? doRegister() : doLogin())}
+              style={{ padding: 8, width: "100%" }} />
+          </label>
+          {authError && <p style={{ color: "#b91c1c", margin: 0 }}>{authError}</p>}
+        </section>
+
+        {isReg && (
+          <>
+            <p style={{ marginBottom: 4 }}>Starting settings (your first problem is instant from the verified bank):</p>
+            {settingsForm("", () => {})}
+          </>
+        )}
+
+        <button onClick={isReg ? doRegister : doLogin} disabled={busy || !username || !password}>
+          {busy ? "…" : isReg ? "Create account & start →" : "Log in →"}
+        </button>{" "}
+        <button onClick={() => { setAuthMode(isReg ? "login" : "register"); setAuthError(null); }} style={{ fontSize: 13 }}>
+          {isReg ? "Have an account? Log in" : "New here? Create an account"}
+        </button>
       </main>
     );
+  }
 
   if (view === "welcome")
     return (
       <main>
-        <h1>Welcome back 👋</h1>
+        <h1>Welcome back{username ? `, ${username}` : ""} 👋</h1>
         <p>Saved settings: <b>{skill}</b> · difficulty {difficulty} · context {ctx} · model {model}.</p>
         <p>Change settings before your next problem?</p>
         <button onClick={() => setView("settings")}>Yes, change settings</button>{" "}
         <button onClick={nextSameSettings} disabled={busy}>No, continue →</button>
-        <p><button onClick={resetSession} style={{ fontSize: 12 }}>Reset session</button></p>
+        <p><button onClick={logout} style={{ fontSize: 12 }}>Log out</button></p>
       </main>
     );
 
@@ -302,7 +367,14 @@ export default function Practice() {
   // practice
   return (
     <main>
-      <h1>Practice</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <h1>Practice</h1>
+        {username && (
+          <span style={{ fontSize: 13, color: "#6b7280" }}>
+            {username} · <button onClick={logout} style={{ fontSize: 13 }}>Log out</button>
+          </span>
+        )}
+      </div>
       {pulseStyle}
 
       {(busy || attempts.length > 0) && !problem && (
@@ -345,8 +417,7 @@ export default function Practice() {
           title="The Planner picks what to practice next (changes skill/difficulty)">
           Adaptive next (Planner) →
         </button>{" "}
-        <button onClick={() => setView("settings")} disabled={busy}>Change settings</button>{" "}
-        <button onClick={resetSession} style={{ fontSize: 12 }}>Reset session</button>
+        <button onClick={() => setView("settings")} disabled={busy}>Change settings</button>
       </p>
     </main>
   );
