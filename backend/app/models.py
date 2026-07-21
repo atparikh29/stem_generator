@@ -26,8 +26,10 @@ class Event(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     ts: datetime = Field(default_factory=_utcnow, index=True)
-    student_id: str = Field(index=True)
-    type: str = Field(index=True)  # e.g. observe, plan, generate, verify, deliver, fail
+    student_id: str = Field(index=True)          # the USER (account) id
+    session_id: Optional[str] = Field(default=None, index=True)  # a login/browser session
+    type: str = Field(index=True)  # register|login|onboard|adjust_settings|observe|plan|
+                                   # context|generate|fail|deliver|attempt|error
     payload: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
 
 

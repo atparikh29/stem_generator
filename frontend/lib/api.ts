@@ -1,11 +1,16 @@
 const BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000/api";
 export const API_BASE = BASE;
+export const SID_KEY = "stemgen.sid"; // login-session id, tagged onto the event log
+
+function sid(): string | null {
+  return typeof window !== "undefined" ? localStorage.getItem(SID_KEY) : null;
+}
 
 async function req(path: string, opts: RequestInit = {}) {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...opts,
-  });
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const s = sid();
+  if (s) headers["X-Session-Id"] = s;
+  const res = await fetch(`${BASE}${path}`, { ...opts, headers: { ...headers, ...(opts.headers as any) } });
   if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
   return res.json();
 }
@@ -33,7 +38,8 @@ export const api = {
       body: JSON.stringify({ problem_id: problemId, answer }),
     }),
 
-  events: (studentId: string) => req(`/students/${studentId}/events`),
+  events: (userId: string, sessionId?: string) =>
+    req(`/students/${userId}/events${sessionId ? `?session_id=${sessionId}` : ""}`),
 
   skills: (): Promise<{ id: string; domain: string; method: string }[]> => req("/skills"),
 
@@ -78,6 +84,8 @@ export const api = {
     const p = new URLSearchParams();
     if (opts.skill) p.set("skill", opts.skill);
     if (opts.difficulty) p.set("difficulty", String(opts.difficulty));
+    const s = sid();
+    if (s) p.set("sid", s); // EventSource can't set headers, so pass it as a query param
     const qs = p.toString();
     return `${API_BASE}/sessions/${id}/next-problem/stream${qs ? `?${qs}` : ""}`;
   },

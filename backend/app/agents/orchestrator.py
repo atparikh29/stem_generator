@@ -15,6 +15,7 @@ Every step appends to the immutable event log.
 """
 from __future__ import annotations
 
+import contextvars
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -63,10 +64,15 @@ class GenerationResult:
     attempts: list[dict]  # per-attempt failure reasons, for diagnostics
 
 
+# Current login/browser session id, tagged onto every event (set per request/thread).
+_session_ctx: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("session_id", default=None)
+
+
 def _log(session: Optional[Session], student_id: str, type_: str, payload: dict) -> None:
     if session is None:
         return
-    session.add(Event(student_id=student_id, type=type_, payload=payload))
+    session.add(Event(student_id=student_id, session_id=_session_ctx.get(),
+                      type=type_, payload=payload))
     session.commit()
 
 
@@ -93,7 +99,9 @@ def generate_next_problem(
     progress: Optional[Callable[[dict], None]] = None,
     skill_override: Optional[str] = None,
     difficulty_override: Optional[int] = None,
+    session_id: Optional[str] = None,
 ) -> GenerationResult:
+    _session_ctx.set(session_id)
     # 1-2. Observe + student model (the skill vector is maintained on the Student).
     skill_vector = student.skill_vector or {}
     _log(session, student.id, "observe", {"skill_vector": skill_vector})
@@ -218,18 +226,21 @@ def fetch_pre_stored(
     context_id: str = "",
     session: Optional[Session] = None,
     provider: Optional[LLMProvider] = None,
+    session_id: Optional[str] = None,
 ) -> GenerationResult:
     """Deliver an already-verified problem from the bank -- instant, no LLM loop.
 
     Used for onboarding and after a settings change. Falls back to the full LLM
     loop only if the bank has nothing for the skill (so the UI never dead-ends).
     """
+    _session_ctx.set(session_id)
     _log(session, student.id, "observe", {"skill_vector": student.skill_vector or {}})
     entry = problem_bank.fetch(skill, difficulty, context_id or None)
     if entry is None:
         if provider is not None:
             return generate_next_problem(student, provider, session=session,
-                                         skill_override=skill, difficulty_override=difficulty)
+                                         skill_override=skill, difficulty_override=difficulty,
+                                         session_id=session_id)
         # No bank entry and no provider: report an empty failure rather than crash.
         return GenerationResult(False, None, VerifierReport(accepted=False), 0, [])
 

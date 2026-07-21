@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { api, Problem } from "../../lib/api";
+import { api, Problem, SID_KEY } from "../../lib/api";
 
 const SESSION_KEY = "stemgen.sessionId";
 const USER_KEY = "stemgen.username";
@@ -51,6 +51,11 @@ export default function Practice() {
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [authError, setAuthError] = useState<string | null>(null);
 
+  // debug log panel
+  const [debug, setDebug] = useState(false);
+  const [logEvents, setLogEvents] = useState<any[]>([]);
+  const [logScope, setLogScope] = useState<"session" | "user">("session");
+
   // ---- bootstrap: load catalogs + detect returning session ----
   useEffect(() => {
     Promise.all([api.contexts().catch(() => []), api.skills().catch(() => [])]).then(
@@ -80,6 +85,7 @@ export default function Practice() {
   function applySavedState(id: string, s: any) {
     setSessionId(id);
     localStorage.setItem(SESSION_KEY, id);
+    if (s.session_id) localStorage.setItem(SID_KEY, s.session_id); // login-session id
     if (s.username) {
       setUsername(s.username);
       localStorage.setItem(USER_KEY, s.username);
@@ -89,6 +95,33 @@ export default function Practice() {
     setDifficulty(s.current_difficulty || 1);
     setModel(s.current_model || "mock");
   }
+
+  // ---- debug log ----
+  async function refreshLog() {
+    if (!sessionId) return;
+    try {
+      const sid = logScope === "session" ? localStorage.getItem(SID_KEY) || undefined : undefined;
+      setLogEvents(await api.events(sessionId, sid));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // Refresh the log when the panel is open, on scope change, and every 3s.
+  useEffect(() => {
+    if (!debug) return;
+    refreshLog();
+    const t = setInterval(refreshLog, 3000);
+    return () => clearInterval(t);
+  }, [debug, logScope, sessionId, problem, feedback]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Shift page content left so the fixed debug panel doesn't overlap it.
+  useEffect(() => {
+    document.body.style.paddingRight = debug ? "46vw" : "";
+    return () => {
+      document.body.style.paddingRight = "";
+    };
+  }, [debug]);
 
   // Difficulties available for the currently selected skill (from the bank).
   const availDiffs = skills.find((s) => s.id === skill)?.difficulties ?? [1, 2, 3, 4, 5];
@@ -140,6 +173,7 @@ export default function Practice() {
   function logout() {
     localStorage.removeItem(SESSION_KEY);
     localStorage.removeItem(USER_KEY);
+    localStorage.removeItem(SID_KEY);
     setSessionId(null);
     setUsername("");
     setPassword("");
@@ -305,11 +339,11 @@ export default function Practice() {
   );
 
   // ---------- screens ----------
-  if (view === "loading") return <main><h1>Practice</h1><p>Loading…</p></main>;
-
-  if (view === "auth") {
+  let screen: ReactNode = null;
+  if (view === "loading") screen = <main><h1>Practice</h1><p>Loading…</p></main>;
+  else if (view === "auth") {
     const isReg = authMode === "register";
-    return (
+    screen = (
       <main>
         <h1>{isReg ? "Create account" : "Log in"}</h1>
         <section style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 320 }}>
@@ -342,9 +376,8 @@ export default function Practice() {
       </main>
     );
   }
-
-  if (view === "welcome")
-    return (
+  else if (view === "welcome")
+    screen = (
       <main>
         <h1>Welcome back{username ? `, ${username}` : ""} 👋</h1>
         <p>Saved settings: <b>{skill}</b> · difficulty {difficulty} · context {ctx} · model {model}.</p>
@@ -354,18 +387,16 @@ export default function Practice() {
         <p><button onClick={logout} style={{ fontSize: 12 }}>Log out</button></p>
       </main>
     );
-
-  if (view === "settings")
-    return (
+  else if (view === "settings")
+    screen = (
       <main>
         <h1>Adjust settings</h1>
         {settingsForm(busy ? "Loading…" : "Apply & get a problem →", applySettings)}
         <button onClick={() => setView("practice")} disabled={!problem}>Cancel</button>
       </main>
     );
-
-  // practice
-  return (
+  else
+    screen = (
     <main>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
         <h1>Practice</h1>
@@ -420,5 +451,49 @@ export default function Practice() {
         <button onClick={() => setView("settings")} disabled={busy}>Change settings</button>
       </p>
     </main>
+  );
+
+  // ---------- top-level: current screen + debug toggle + log panel ----------
+  return (
+    <>
+      <label style={{ position: "fixed", top: 8, right: 8, zIndex: 30, fontSize: 12,
+        background: "#fff", padding: "3px 8px", border: "1px solid #ddd", borderRadius: 6 }}>
+        <input type="checkbox" checked={debug} onChange={(e) => setDebug(e.target.checked)} /> Debug
+      </label>
+      {screen}
+      {debug && (
+        <aside style={{ position: "fixed", top: 0, right: 0, width: "46vw", height: "100vh",
+          overflow: "auto", background: "#0b1020", color: "#d1d5db", borderLeft: "1px solid #1f2937",
+          padding: 14, fontFamily: "ui-monospace, Menlo, monospace", fontSize: 12, zIndex: 25 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <b style={{ color: "#fff" }}>Event log</b>
+            <span>
+              <select value={logScope} onChange={(e) => setLogScope(e.target.value as any)}
+                style={{ fontSize: 12 }}>
+                <option value="session">this session</option>
+                <option value="user">all sessions (user)</option>
+              </select>{" "}
+              <button onClick={refreshLog} style={{ fontSize: 12 }}>↻</button>
+            </span>
+          </div>
+          <div style={{ color: "#6b7280", marginBottom: 6 }}>
+            user {sessionId?.slice(0, 8)} · {logEvents.length} events
+          </div>
+          {logEvents.map((e) => (
+            <div key={e.id} style={{ borderBottom: "1px solid #1f2937", padding: "5px 0" }}>
+              <div>
+                <span style={{ color: "#93c5fd" }}>#{e.id}</span>{" "}
+                <b style={{ color: "#fbbf24" }}>{e.type}</b>{" "}
+                <span style={{ color: "#6b7280" }}>{(e.ts || "").slice(11, 19)}</span>{" "}
+                <span style={{ color: "#4b5563" }}>sid:{(e.session_id || "—").slice(0, 8)}</span>
+              </div>
+              <pre style={{ margin: "2px 0 0", whiteSpace: "pre-wrap", color: "#9ca3af" }}>
+                {JSON.stringify(e.payload)}
+              </pre>
+            </div>
+          ))}
+        </aside>
+      )}
+    </>
   );
 }

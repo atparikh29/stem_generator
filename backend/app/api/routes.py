@@ -8,7 +8,7 @@ import threading
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -160,7 +160,8 @@ def _resolve_skill(skill: Optional[str]) -> Optional[str]:
 
 
 def _problem_stream(student_id: str, provider_override: Optional[str],
-                    skill_override: Optional[str], difficulty: Optional[int]) -> StreamingResponse:
+                    skill_override: Optional[str], difficulty: Optional[int],
+                    session_id: Optional[str] = None) -> StreamingResponse:
     """SSE: run the LLM generate->verify->regenerate loop in a worker thread and
     stream each step (plan, generating, rejected, accepted) to the browser."""
     with Session(engine) as check:
@@ -183,6 +184,7 @@ def _problem_stream(student_id: str, provider_override: Optional[str],
                     student, get_provider(provider_override), session=session,
                     max_regenerations=settings.max_regenerations, progress=progress,
                     skill_override=skill_override, difficulty_override=difficulty,
+                    session_id=session_id,
                 )
                 q.put({"type": "result", "accepted": result.accepted,
                        "regen_count": result.regen_count,
@@ -214,14 +216,16 @@ def next_problem_stream(
     provider: Optional[str] = Query(None),
     skill: Optional[str] = Query(None),
     difficulty: Optional[int] = Query(None, ge=1, le=5),
+    session_id: Optional[str] = Query(None),  # EventSource can't set headers
 ):
     provider_override = None if provider in (None, "", "auto", "default") else provider
-    return _problem_stream(student_id, provider_override, _resolve_skill(skill), difficulty)
+    return _problem_stream(student_id, provider_override, _resolve_skill(skill), difficulty, session_id)
 
 
 # ---------- attempts (observe -> assessor -> save state) ----------
 
-def _grade_and_record(student_id: str, body: AttemptBody, session: Session) -> dict:
+def _grade_and_record(student_id: str, body: AttemptBody, session: Session,
+                      session_id: Optional[str] = None) -> dict:
     student = session.get(Student, student_id)
     if not student:
         raise HTTPException(404, "session not found")
@@ -234,25 +238,30 @@ def _grade_and_record(student_id: str, body: AttemptBody, session: Session) -> d
     student.skill_vector = assessor.update_mastery(student.skill_vector, problem.skill, correct)
     student.misconceptions = assessor.infer_misconceptions(student.skill_vector)
     session.add(student)
-    session.add(Event(student_id=student_id, type="attempt",
-                      payload={"problem_id": body.problem_id, "answer": body.answer, "correct": correct}))
+    session.add(Event(student_id=student_id, session_id=session_id, type="attempt",
+                      payload={"problem_id": body.problem_id, "answer": body.answer, "correct": correct,
+                               "skill": problem.skill, "new_mastery": student.skill_vector.get(problem.skill)}))
     session.commit()
     return {"correct": correct, "detail": detail, "skill": problem.skill,
             "new_mastery": student.skill_vector.get(problem.skill)}
 
 
 @router.post("/students/{student_id}/attempts")
-def submit_attempt(student_id: str, body: AttemptBody, session: Session = Depends(get_session)):
-    return _grade_and_record(student_id, body, session)
+def submit_attempt(student_id: str, body: AttemptBody, session: Session = Depends(get_session),
+                   x_session_id: Optional[str] = Header(None)):
+    return _grade_and_record(student_id, body, session, x_session_id)
 
 
-# ---------- event log (immutable) ----------
+# ---------- event log (immutable, comprehensive) ----------
 
 @router.get("/students/{student_id}/events")
-def list_events(student_id: str, limit: int = 100, session: Session = Depends(get_session)):
-    rows = session.exec(
-        select(Event).where(Event.student_id == student_id).order_by(Event.id.desc()).limit(limit)
-    ).all()
+def list_events(student_id: str, limit: int = 500, session_id: Optional[str] = Query(None),
+                session: Session = Depends(get_session)):
+    """Full structured log for a USER. Pass ?session_id=… to scope to one session."""
+    q = select(Event).where(Event.student_id == student_id)
+    if session_id:
+        q = q.where(Event.session_id == session_id)
+    rows = session.exec(q.order_by(Event.id.desc()).limit(limit)).all()
     return rows
 
 
@@ -279,22 +288,24 @@ def register(body: RegisterBody, session: Session = Depends(get_session)):
         current_model=body.model,
     )
     student.misconceptions = assessor.infer_misconceptions(student.skill_vector)
+    sid = str(uuid.uuid4())
     session.add(student)
-    session.add(Event(student_id=student.id, type="register", payload={"username": username}))
+    session.add(Event(student_id=student.id, session_id=sid, type="register", payload={"username": username}))
     session.commit()
     session.refresh(student)
-    return student
+    return {**jsonable_encoder(student), "session_id": sid}
 
 
 @router.post("/auth/login")
 def login(body: LoginBody, session: Session = Depends(get_session)):
-    """Verify credentials and return the user's session (to resume saved state)."""
+    """Verify credentials, start a new session, and return it (to resume saved state)."""
     student = session.exec(select(Student).where(Student.username == body.username.strip())).first()
     if not student or not verify_password(body.password, student.password_hash):
         raise HTTPException(401, "invalid username or password")
-    session.add(Event(student_id=student.id, type="login", payload={"username": student.username}))
+    sid = str(uuid.uuid4())
+    session.add(Event(student_id=student.id, session_id=sid, type="login", payload={"username": student.username}))
     session.commit()
-    return student
+    return {**jsonable_encoder(student), "session_id": sid}
 
 
 # ---------- sessions (the new flowchart surface) ----------
@@ -323,18 +334,20 @@ def create_session(body: CreateSession, session: Session = Depends(get_session))
         current_model=body.model,
     )
     student.misconceptions = assessor.infer_misconceptions(student.skill_vector)
+    sid = str(uuid.uuid4())
     session.add(student)
-    session.add(Event(student_id=student.id, type="onboard",
+    session.add(Event(student_id=student.id, session_id=sid, type="onboard",
                       payload={"context_id": body.context_id, "skill": body.skill,
                                "difficulty": body.difficulty, "model": body.model}))
     session.commit()
     session.refresh(student)
-    return student
+    return {**jsonable_encoder(student), "session_id": sid}
 
 
 @router.get("/sessions/{session_id}")
 def get_session_state(session_id: str, session: Session = Depends(get_session)):
-    """Returning-session branch: saved state for the frontend to restore."""
+    """Returning-session branch: saved state for the frontend to restore.
+    NB: the path {session_id} is the USER/account id."""
     student = session.get(Student, session_id)
     if not student:
         raise HTTPException(404, "session not found")
@@ -342,7 +355,8 @@ def get_session_state(session_id: str, session: Session = Depends(get_session)):
 
 
 @router.post("/sessions/{session_id}/settings")
-def adjust_settings(session_id: str, body: SettingsBody, session: Session = Depends(get_session)):
+def adjust_settings(session_id: str, body: SettingsBody, session: Session = Depends(get_session),
+                    x_session_id: Optional[str] = Header(None)):
     """Adjust Settings (startup or midway): update saved context/skill/difficulty/model."""
     student = session.get(Student, session_id)
     if not student:
@@ -356,7 +370,7 @@ def adjust_settings(session_id: str, body: SettingsBody, session: Session = Depe
     if body.model is not None:
         student.current_model = body.model
     session.add(student)
-    session.add(Event(student_id=session_id, type="adjust_settings",
+    session.add(Event(student_id=session_id, session_id=x_session_id, type="adjust_settings",
                       payload={"context_id": student.current_context_id, "skill": student.current_skill,
                                "difficulty": student.current_difficulty, "model": student.current_model}))
     session.commit()
@@ -371,6 +385,7 @@ def fetch_pre_stored(
     difficulty: Optional[int] = Query(None, ge=1, le=5),
     context: Optional[str] = Query(None),
     session: Session = Depends(get_session),
+    x_session_id: Optional[str] = Header(None),
 ):
     """Fetch a pre-stored, already-verified problem -- instant, no LLM loop."""
     student = session.get(Student, session_id)
@@ -381,7 +396,8 @@ def fetch_pre_stored(
     use_ctx = context or student.current_context_id
     provider = get_provider(student.current_model or None)
     result = orchestrator.fetch_pre_stored(
-        student, use_skill, use_diff, context_id=use_ctx, session=session, provider=provider)
+        student, use_skill, use_diff, context_id=use_ctx, session=session, provider=provider,
+        session_id=x_session_id)
     return {"accepted": result.accepted, "problem": result.problem,
             "regen_count": result.regen_count, "source": "pre_stored"}
 
@@ -391,6 +407,7 @@ def session_next_problem_stream(
     session_id: str,
     skill: Optional[str] = Query(None),
     difficulty: Optional[int] = Query(None, ge=1, le=5),
+    sid: Optional[str] = Query(None),  # login-session id (EventSource can't set headers)
     session: Session = Depends(get_session),
 ):
     """Stream the LLM loop with the session's model.
@@ -401,9 +418,10 @@ def session_next_problem_stream(
     student = session.get(Student, session_id)
     if not student:
         raise HTTPException(404, "session not found")
-    return _problem_stream(session_id, student.current_model or None, _resolve_skill(skill), difficulty)
+    return _problem_stream(session_id, student.current_model or None, _resolve_skill(skill), difficulty, sid)
 
 
 @router.post("/sessions/{session_id}/attempts")
-def session_attempt(session_id: str, body: AttemptBody, session: Session = Depends(get_session)):
-    return _grade_and_record(session_id, body, session)
+def session_attempt(session_id: str, body: AttemptBody, session: Session = Depends(get_session),
+                    x_session_id: Optional[str] = Header(None)):
+    return _grade_and_record(session_id, body, session, x_session_id)

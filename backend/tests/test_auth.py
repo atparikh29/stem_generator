@@ -28,12 +28,14 @@ def test_hash_is_salted():
 
 def test_register_then_login_resumes_session():
     with _mem() as db:
+        # register/login return a dict: the public user fields + a fresh session_id
         user = register(RegisterBody(username="bob", password="pw", skill="kinematics", difficulty=1), db)
-        assert user.username == "bob"
-        assert user.onboarded and user.current_skill == "kinematics"
-        # login with the right password returns the SAME session row
+        assert user["username"] == "bob"
+        assert user["onboarded"] and user["current_skill"] == "kinematics"
+        assert "session_id" in user and "password_hash" not in user
         again = login(LoginBody(username="bob", password="pw"), db)
-        assert again.id == user.id
+        assert again["id"] == user["id"]           # same user/account row
+        assert again["session_id"] != user["session_id"]  # but a new login session
 
 
 def test_duplicate_username_rejected():
