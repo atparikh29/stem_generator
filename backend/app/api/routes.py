@@ -75,6 +75,11 @@ class LoginBody(BaseModel):
     password: str
 
 
+class UiEventBody(BaseModel):
+    action: str
+    detail: dict = {}
+
+
 # ---------- students ----------
 
 @router.post("/students")
@@ -253,6 +258,19 @@ def submit_attempt(student_id: str, body: AttemptBody, session: Session = Depend
 
 
 # ---------- event log (immutable, comprehensive) ----------
+
+@router.post("/students/{student_id}/ui-events")
+def log_ui_event(student_id: str, body: UiEventBody, session: Session = Depends(get_session),
+                 x_session_id: Optional[str] = Header(None)):
+    """Record a front-end GUI action (button click, settings change, etc.) into the
+    same append-only log, tagged with the user and the login session."""
+    if not session.get(Student, student_id):
+        raise HTTPException(404, "session not found")
+    session.add(Event(student_id=student_id, session_id=x_session_id, type="ui",
+                      payload={"action": body.action, **body.detail}))
+    session.commit()
+    return {"ok": True}
+
 
 @router.get("/students/{student_id}/events")
 def list_events(student_id: str, limit: int = 500, session_id: Optional[str] = Query(None),

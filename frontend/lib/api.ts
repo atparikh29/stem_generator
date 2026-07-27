@@ -41,7 +41,15 @@ export const api = {
   events: (userId: string, sessionId?: string) =>
     req(`/students/${userId}/events${sessionId ? `?session_id=${sessionId}` : ""}`),
 
-  skills: (): Promise<{ id: string; domain: string; method: string }[]> => req("/skills"),
+  // Fire-and-forget: record a GUI action into the event log (never blocks the UI).
+  logUi: (userId: string, action: string, detail: Record<string, any> = {}) =>
+    req(`/students/${userId}/ui-events`, {
+      method: "POST",
+      body: JSON.stringify({ action, detail }),
+    }).catch(() => {}),
+
+  skills: (): Promise<{ id: string; domain: string; method: string; difficulties: number[] }[]> =>
+    req("/skills"),
 
   contexts: (): Promise<{ id: string; noun: string; narrative: string; interest_tags: string[] }[]> =>
     req("/contexts"),

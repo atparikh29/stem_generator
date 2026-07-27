@@ -16,6 +16,7 @@ Every step appends to the immutable event log.
 from __future__ import annotations
 
 import contextvars
+import time
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -133,40 +134,73 @@ def generate_next_problem(
     attempts: list[dict] = []
     last_report = VerifierReport(accepted=False, failure_reasons=["json_invalid"])
 
-    # 5-8. Generate -> verify -> accept/regenerate.
+    # 5-8. Generate -> verify -> accept/regenerate. Every attempt is written to the
+    # event log in full (generate_start -> candidate -> accept | reject) so the
+    # entire regeneration trace is reconstructable per user and per session.
+    provider_label = getattr(provider, "name", provider.__class__.__name__)
     _emit(progress, status="plan", skill=skill, difficulty_target=difficulty_target)
     for attempt in range(max_regenerations + 1):
         spec = GenerationSpec(skill, difficulty_target, context, failure_feedback)
+        feedback_in = list(failure_feedback)  # what we fed back from the prior failure
+        prompt = build_generation_prompt(spec)
         # The prompt grows each retry: the previous failure reasons are appended.
         _emit(progress, status="generating", attempt=attempt,
-              feedback=list(failure_feedback), prompt=build_generation_prompt(spec))
+              feedback=feedback_in, prompt=prompt)
+        # Logged BEFORE the (potentially slow) model call, so the log shows we're
+        # waiting on the LLM rather than hung. `candidate`/`reject` report gen_ms.
+        _log(session, student.id, "generate_start",
+             {"attempt": attempt, "is_regeneration": attempt > 0, "skill": skill,
+              "difficulty_target": difficulty_target, "context_id": context.get("id"),
+              "provider": provider_label, "feedback_in": feedback_in, "prompt_chars": len(prompt)})
+
+        t_gen = time.monotonic()
         try:
             candidate = provider.generate_problem(spec)
         except ValueError as exc:  # invalid/un-parseable JSON
+            gen_ms = int((time.monotonic() - t_gen) * 1000)
             failure_feedback = ["json_invalid"]
             attempts.append({"attempt": attempt, "failures": failure_feedback, "detail": str(exc)})
-            _log(session, student.id, "fail", {"attempt": attempt, "reason": "json_invalid", "detail": str(exc)})
+            _log(session, student.id, "reject",
+                 {"attempt": attempt, "phase": "parse", "gen_ms": gen_ms, "failure_codes": ["json_invalid"],
+                  "failures": [{"code": "json_invalid", "label": "unparseable JSON", "detail": str(exc)}]})
             _emit(progress, status="rejected", attempt=attempt, failures=["json_invalid"], detail=str(exc))
             last_report = VerifierReport(accepted=False, failure_reasons=["json_invalid"])
             continue
+        gen_ms = int((time.monotonic() - t_gen) * 1000)
 
         # Contract check: the task must match the planned skill (else json_invalid).
         mismatch = _task_matches_skill(skill, candidate.task)
         if mismatch:
             failure_feedback = [f"json_invalid ({mismatch})"]
             attempts.append({"attempt": attempt, "failures": ["json_invalid"], "detail": mismatch})
-            _log(session, student.id, "fail", {"attempt": attempt, "reason": "json_invalid", "detail": mismatch})
+            _log(session, student.id, "reject",
+                 {"attempt": attempt, "phase": "contract", "gen_ms": gen_ms, "failure_codes": ["json_invalid"],
+                  "failures": [{"code": "json_invalid", "label": "task/skill mismatch", "detail": mismatch}],
+                  "statement": candidate.statement})
             _emit(progress, status="rejected", attempt=attempt, failures=["json_invalid"], detail=mismatch)
             last_report = VerifierReport(accepted=False, failure_reasons=["json_invalid"])
             continue
 
-        _log(session, student.id, "generate", {"attempt": attempt, "statement": candidate.statement})
+        claimed = _answer_str(candidate.task)
+        _log(session, student.id, "candidate",
+             {"attempt": attempt, "gen_ms": gen_ms, "statement": candidate.statement,
+              "claimed_answer": claimed, "solution": candidate.solution,
+              "task": candidate.task.model_dump()})
 
+        # Verification phase (SymPy / physics templates / clarity) -- also timed.
+        _log(session, student.id, "verify_start", {"attempt": attempt, "statement": candidate.statement})
+        _emit(progress, status="verifying", attempt=attempt, statement=candidate.statement)
+        t_ver = time.monotonic()
         report = engine.verify(candidate, provider)
+        verify_ms = int((time.monotonic() - t_ver) * 1000)
         last_report = report
         if report.accepted:
             _emit(progress, status="accepted", attempt=attempt,
-                  statement=candidate.statement, answer=_answer_str(candidate.task))
+                  statement=candidate.statement, answer=claimed)
+            _log(session, student.id, "accept",
+                 {"attempt": attempt, "gen_ms": gen_ms, "verify_ms": verify_ms,
+                  "statement": candidate.statement, "claimed_answer": claimed,
+                  "difficulty_observed": report.difficulty_observed, "regen_count": attempt})
             problem = ProblemRecord(
                 student_id=student.id,
                 domain=domain_of(skill).value,
@@ -186,7 +220,8 @@ def generate_next_problem(
                 session.commit()
                 session.refresh(problem)
             _log(session, student.id, "deliver",
-                 {"problem_id": problem.id, "skill": skill, "regen_count": attempt, "source": "llm"})
+                 {"problem_id": problem.id, "skill": skill, "difficulty_target": difficulty_target,
+                  "regen_count": attempt, "source": "llm"})
             return GenerationResult(True, problem, report, attempt, attempts)
 
         # Feed the SPECIFIC reason back to the model (not just the code) so it can
@@ -195,13 +230,19 @@ def generate_next_problem(
         failure_feedback = [f"{e['code']}: {e['detail']}" if e.get("detail") else e["code"]
                             for e in explained]
         attempts.append({"attempt": attempt, "failures": report.failure_reasons})
-        _log(session, student.id, "fail", {"attempt": attempt, "reasons": report.failure_reasons})
+        _log(session, student.id, "reject",
+             {"attempt": attempt, "phase": "verify", "gen_ms": gen_ms, "verify_ms": verify_ms,
+              "failure_codes": report.failure_reasons,
+              "failures": explained, "statement": candidate.statement,
+              "claimed_answer": claimed, "difficulty_observed": report.difficulty_observed})
         _emit(progress, status="rejected", attempt=attempt, failures=report.failure_reasons,
-              statement=candidate.statement, answer=_answer_str(candidate.task),
+              statement=candidate.statement, answer=claimed,
               details=explained)
 
     # Exhausted regenerations.
     _emit(progress, status="exhausted", failures=last_report.failure_reasons)
+    _log(session, student.id, "exhausted",
+         {"attempts": max_regenerations + 1, "failure_codes": last_report.failure_reasons})
     failed = ProblemRecord(
         student_id=student.id,
         domain=domain_of(skill).value,
@@ -263,5 +304,6 @@ def fetch_pre_stored(
         session.commit()
         session.refresh(problem)
     _log(session, student.id, "deliver",
-         {"problem_id": problem.id, "skill": skill, "regen_count": 0, "source": "pre_stored"})
+         {"problem_id": problem.id, "skill": skill, "difficulty_target": problem.difficulty_target,
+          "context_id": problem.context_id, "regen_count": 0, "source": "pre_stored"})
     return GenerationResult(True, problem, VerifierReport(accepted=True), 0, [])

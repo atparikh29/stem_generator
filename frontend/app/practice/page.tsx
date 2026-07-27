@@ -55,6 +55,7 @@ export default function Practice() {
   const [debug, setDebug] = useState(false);
   const [logEvents, setLogEvents] = useState<any[]>([]);
   const [logScope, setLogScope] = useState<"session" | "user">("session");
+  const [genSeconds, setGenSeconds] = useState(0); // live "still working" counter
 
   // ---- bootstrap: load catalogs + detect returning session ----
   useEffect(() => {
@@ -131,6 +132,23 @@ export default function Practice() {
     if (skills.length && !availDiffs.includes(difficulty)) setDifficulty(availDiffs[0]);
   }, [skills, skill]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Fire-and-forget GUI-action logging (records button clicks / settings changes).
+  function logUi(action: string, detail: Record<string, any> = {}) {
+    const uid = sessionId || localStorage.getItem(SESSION_KEY);
+    if (uid) api.logUi(uid, action, detail);
+  }
+
+  // Tick an elapsed-seconds counter while the LLM loop runs, so a slow model
+  // reads as "still working (12s)" rather than a frozen screen.
+  useEffect(() => {
+    if (!(busy && source === "llm" && !problem)) {
+      setGenSeconds(0);
+      return;
+    }
+    const t = setInterval(() => setGenSeconds((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [busy, source, problem]);
+
   function resetProblemState() {
     setProblem(null);
     setAttempts([]);
@@ -162,6 +180,7 @@ export default function Practice() {
       const s = await api.login(username, password);
       applySavedState(s.id, s);
       setPassword("");
+      api.logUi(s.id, "ui_login"); // s.id known now; header sid set by applySavedState
       setView("welcome");
     } catch (e: any) {
       setAuthError("Invalid username or password.");
@@ -171,6 +190,7 @@ export default function Practice() {
   }
 
   function logout() {
+    logUi("logout");
     localStorage.removeItem(SESSION_KEY);
     localStorage.removeItem(USER_KEY);
     localStorage.removeItem(SID_KEY);
@@ -184,6 +204,7 @@ export default function Practice() {
   // ---- adjust settings -> instant pre-stored problem ----
   async function applySettings() {
     if (!sessionId) return;
+    logUi("apply_settings", { context_id: ctx, skill, difficulty, model });
     setBusy(true);
     try {
       await api.adjustSettings(sessionId, { context_id: ctx, skill, difficulty, model });
@@ -247,6 +268,7 @@ export default function Practice() {
 
   async function submit() {
     if (!sessionId || !problem) return;
+    logUi("submit_answer", { problem_id: problem.id, answer });
     setBusy(true);
     try {
       const res = await api.sessionAttempt(sessionId, problem.id, answer);
@@ -259,6 +281,14 @@ export default function Practice() {
   }
 
   // ---------- shared UI bits ----------
+  // Color-code event types in the debug log: green=accepted/delivered,
+  // red=rejected/exhausted, amber=everything else.
+  function logTypeColor(type: string): string {
+    if (["accept", "deliver"].includes(type)) return "#4ade80";
+    if (["reject", "exhausted"].includes(type)) return "#f87171";
+    if (type === "ui") return "#38bdf8"; // GUI actions — cyan
+    return "#fbbf24";
+  }
   const sel = { padding: 6, marginLeft: 6 } as const;
   const domains = Array.from(new Set(skills.map((s) => s.domain)));
 
@@ -268,12 +298,12 @@ export default function Practice() {
         padding: "12px 14px", background: "#eef2ff", border: "1px solid #c7d2fe",
         borderRadius: 10, marginBottom: 16 }}>
         <label>Context
-          <select value={ctx} onChange={(e) => setCtx(e.target.value)} style={sel}>
+          <select value={ctx} onChange={(e) => { setCtx(e.target.value); logUi("change_setting", { field: "context", value: e.target.value }); }} style={sel}>
             {contexts.map((c) => <option key={c.id} value={c.id}>{c.id}</option>)}
           </select>
         </label>
         <label>Skill
-          <select value={skill} onChange={(e) => setSkill(e.target.value)} style={sel}>
+          <select value={skill} onChange={(e) => { setSkill(e.target.value); logUi("change_setting", { field: "skill", value: e.target.value }); }} style={sel}>
             {domains.map((d) => (
               <optgroup key={d} label={d}>
                 {skills.filter((s) => s.domain === d).map((s) => (
@@ -284,7 +314,7 @@ export default function Practice() {
           </select>
         </label>
         <label>Difficulty
-          <select value={difficulty} onChange={(e) => setDifficulty(Number(e.target.value))} style={sel}>
+          <select value={difficulty} onChange={(e) => { setDifficulty(Number(e.target.value)); logUi("change_setting", { field: "difficulty", value: Number(e.target.value) }); }} style={sel}>
             {availDiffs.map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
           {availDiffs.length < 5 && (
@@ -294,7 +324,7 @@ export default function Practice() {
           )}
         </label>
         <label>Model
-          <select value={model} onChange={(e) => setModel(e.target.value)} style={sel}>
+          <select value={model} onChange={(e) => { setModel(e.target.value); logUi("change_setting", { field: "model", value: e.target.value }); }} style={sel}>
             <option value="mock">Mock (instant)</option>
             <option value="openai">Llama (local)</option>
             <option value="anthropic">Claude (needs key)</option>
@@ -306,33 +336,11 @@ export default function Practice() {
     );
   }
 
-  function row(key: number, accent: string, children: ReactNode) {
-    return (
-      <div key={key} style={{ borderLeft: `3px solid ${accent}`, padding: "6px 10px",
-        margin: "4px 0", background: "#fff", borderRadius: 4 }}>{children}</div>
-    );
-  }
-  function renderAttempt(a: Attempt, i: number) {
-    const t = (n?: number) => <span style={{ color: "#6b7280" }}>attempt {n}</span>;
-    if (a.status === "plan")
-      return row(i, "#9ca3af", <span>🧭 Planner selected <b>{a.skill}</b> · difficulty {a.difficulty_target}</span>);
-    if (a.status === "generating")
-      return row(i, "#f59e0b", <span style={{ color: "#92400e" }}>{t(a.attempt)} · generating… <span className="pulse">⏳</span></span>);
-    if (a.status === "accepted")
-      return row(i, "#16a34a", <span style={{ color: "#166534", fontWeight: 600 }}>{t(a.attempt)} · ✓ accepted</span>);
-    if (a.status === "rejected")
-      return row(i, "#dc2626",
-        <div>
-          <span style={{ color: "#991b1b", fontWeight: 600 }}>{t(a.attempt)} · ✗ rejected</span>
-          {a.statement && <div style={{ color: "#6b7280", fontSize: 13 }}>“{a.statement.slice(0, 90)}…” → claimed <b>{a.answer}</b></div>}
-          {(a.details || []).map((d, j) => (
-            <div key={j} style={{ fontSize: 13, color: "#b91c1c" }}>• <b>{d.code}</b>{d.detail ? ` — ${d.detail}` : ` — ${d.label}`}</div>
-          ))}
-        </div>);
-    if (a.status === "exhausted")
-      return row(i, "#dc2626", <span style={{ color: "#991b1b" }}>⚠ Budget exhausted — click “Continue” to retry.</span>);
-    return null;
-  }
+  // The per-attempt regeneration trace (statements, claimed answers, rejection
+  // reasons) is intentionally NOT rendered on the practice screen -- it belongs
+  // in the Debug panel only. Here we surface just a neutral progress spinner.
+  const candidatesTried = attempts.filter((a) => a.status === "generating").length;
+  const verifying = attempts.length > 0 && attempts[attempts.length - 1].status === "verifying";
 
   const pulseStyle = (
     <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}} .pulse{display:inline-block;animation:pulse 1s ease-in-out infinite}`}</style>
@@ -382,8 +390,8 @@ export default function Practice() {
         <h1>Welcome back{username ? `, ${username}` : ""} 👋</h1>
         <p>Saved settings: <b>{skill}</b> · difficulty {difficulty} · context {ctx} · model {model}.</p>
         <p>Change settings before your next problem?</p>
-        <button onClick={() => setView("settings")}>Yes, change settings</button>{" "}
-        <button onClick={nextSameSettings} disabled={busy}>No, continue →</button>
+        <button onClick={() => { logUi("open_settings"); setView("settings"); }}>Yes, change settings</button>{" "}
+        <button onClick={() => { logUi("welcome_continue", { model, skill, difficulty }); nextSameSettings(); }} disabled={busy}>No, continue →</button>
         <p><button onClick={logout} style={{ fontSize: 12 }}>Log out</button></p>
       </main>
     );
@@ -392,7 +400,7 @@ export default function Practice() {
       <main>
         <h1>Adjust settings</h1>
         {settingsForm(busy ? "Loading…" : "Apply & get a problem →", applySettings)}
-        <button onClick={() => setView("practice")} disabled={!problem}>Cancel</button>
+        <button onClick={() => { logUi("cancel_settings"); setView("practice"); }} disabled={!problem}>Cancel</button>
       </main>
     );
   else
@@ -408,15 +416,22 @@ export default function Practice() {
       </div>
       {pulseStyle}
 
-      {(busy || attempts.length > 0) && !problem && (
+      {busy && !problem && (
         <section style={{ background: "#f3f4f6", border: "1px solid #e5e7eb", padding: 14,
-          borderRadius: 10, marginBottom: 16, fontFamily: "ui-monospace, Menlo, monospace", fontSize: 14 }}>
-          <p style={{ margin: "0 0 8px", fontWeight: 700, fontFamily: "system-ui" }}>
-            {attempts.length > 0
-              ? <><span className="pulse">⏳</span> Regenerate-until-valid loop (verifier checking each candidate)</>
-              : <><span className="pulse">⏳</span> Fetching a verified problem…</>}
+          borderRadius: 10, marginBottom: 16 }}>
+          <p style={{ margin: 0, fontWeight: 600 }}>
+            <span className="pulse">⏳</span>{" "}
+            {source === "llm"
+              ? "Generating a verified problem… running the regenerate-until-valid loop."
+              : "Fetching a verified problem…"}
           </p>
-          {attempts.map(renderAttempt)}
+          {source === "llm" && (
+            <p style={{ margin: "6px 0 0", color: "#6b7280", fontSize: 13 }}>
+              Still working — {genSeconds}s elapsed
+              {candidatesTried > 0 && <>, candidate #{candidatesTried} {verifying ? "being verified" : "being generated"}</>}.
+              {" "}Turn on <b>Debug</b> (top-right) to watch every attempt, its timing, and its rejection reason.
+            </p>
+          )}
         </section>
       )}
 
@@ -435,20 +450,24 @@ export default function Practice() {
             style={{ padding: 8, width: "60%" }} />{" "}
           <button onClick={submit} disabled={busy || !answer}>Submit</button>
           {feedback && <p>{feedback}</p>}
-          {feedback && <details><summary>Show solution</summary><p>{problem.solution}</p></details>}
+          {feedback && (
+            <details onToggle={(e) => logUi("toggle_solution", { open: (e.target as HTMLDetailsElement).open })}>
+              <summary>Show solution</summary><p>{problem.solution}</p>
+            </details>
+          )}
         </section>
       )}
 
       <p style={{ marginTop: 20 }}>
-        <button onClick={nextSameSettings} disabled={busy}
+        <button onClick={() => { logUi("click_next_problem", { model, skill, difficulty }); nextSameSettings(); }} disabled={busy}
           title={model === "mock" ? "Instant from the verified bank" : `Generate with ${model} at your skill/difficulty`}>
           Next problem →
         </button>{" "}
-        <button onClick={() => streamProblem({})} disabled={busy}
+        <button onClick={() => { logUi("click_adaptive_next"); streamProblem({}); }} disabled={busy}
           title="The Planner picks what to practice next (changes skill/difficulty)">
           Adaptive next (Planner) →
         </button>{" "}
-        <button onClick={() => setView("settings")} disabled={busy}>Change settings</button>
+        <button onClick={() => { logUi("open_settings"); setView("settings"); }} disabled={busy}>Change settings</button>
       </p>
     </main>
   );
@@ -458,7 +477,7 @@ export default function Practice() {
     <>
       <label style={{ position: "fixed", top: 8, right: 8, zIndex: 30, fontSize: 12,
         background: "#fff", padding: "3px 8px", border: "1px solid #ddd", borderRadius: 6 }}>
-        <input type="checkbox" checked={debug} onChange={(e) => setDebug(e.target.checked)} /> Debug
+        <input type="checkbox" checked={debug} onChange={(e) => { setDebug(e.target.checked); logUi("toggle_debug", { on: e.target.checked }); }} /> Debug
       </label>
       {screen}
       {debug && (
@@ -483,12 +502,12 @@ export default function Practice() {
             <div key={e.id} style={{ borderBottom: "1px solid #1f2937", padding: "5px 0" }}>
               <div>
                 <span style={{ color: "#93c5fd" }}>#{e.id}</span>{" "}
-                <b style={{ color: "#fbbf24" }}>{e.type}</b>{" "}
+                <b style={{ color: logTypeColor(e.type) }}>{e.type}</b>{" "}
                 <span style={{ color: "#6b7280" }}>{(e.ts || "").slice(11, 19)}</span>{" "}
                 <span style={{ color: "#4b5563" }}>sid:{(e.session_id || "—").slice(0, 8)}</span>
               </div>
               <pre style={{ margin: "2px 0 0", whiteSpace: "pre-wrap", color: "#9ca3af" }}>
-                {JSON.stringify(e.payload)}
+                {JSON.stringify(e.payload, null, 1)}
               </pre>
             </div>
           ))}
