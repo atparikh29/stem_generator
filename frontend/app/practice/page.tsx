@@ -55,6 +55,7 @@ export default function Practice() {
   const [debug, setDebug] = useState(false);
   const [logEvents, setLogEvents] = useState<any[]>([]);
   const [logScope, setLogScope] = useState<"session" | "user">("session");
+  const [logPrompt, setLogPrompt] = useState(false); // log/show the full LLM prompt
   const [genSeconds, setGenSeconds] = useState(0); // live "still working" counter
 
   // ---- bootstrap: load catalogs + detect returning session ----
@@ -246,7 +247,7 @@ export default function Practice() {
     setRequestedDiff(opts.difficulty ?? null);
     setView("practice");
     setBusy(true);
-    const es = new EventSource(api.sessionStreamUrl(sessionId, opts));
+    const es = new EventSource(api.sessionStreamUrl(sessionId, { ...opts, logPrompt }));
     es.onmessage = (e) => {
       const ev = JSON.parse(e.data);
       if (ev.type === "progress") setAttempts((a) => [...a, ev as Attempt]);
@@ -487,6 +488,11 @@ export default function Practice() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <b style={{ color: "#fff" }}>Event log</b>
             <span>
+              <label style={{ fontSize: 12, marginRight: 8 }}>
+                <input type="checkbox" checked={logPrompt}
+                  onChange={(e) => { setLogPrompt(e.target.checked); logUi("toggle_log_prompt", { on: e.target.checked }); }} />
+                {" "}log prompt
+              </label>
               <select value={logScope} onChange={(e) => setLogScope(e.target.value as any)}
                 style={{ fontSize: 12 }}>
                 <option value="session">this session</option>
@@ -495,22 +501,39 @@ export default function Practice() {
               <button onClick={refreshLog} style={{ fontSize: 12 }}>↻</button>
             </span>
           </div>
+          {logPrompt && (
+            <div style={{ color: "#38bdf8", marginBottom: 6, fontSize: 11 }}>
+              Full prompt will be logged on your next generation (LLM models only).
+            </div>
+          )}
           <div style={{ color: "#6b7280", marginBottom: 6 }}>
             user {sessionId?.slice(0, 8)} · {logEvents.length} events
           </div>
-          {logEvents.map((e) => (
-            <div key={e.id} style={{ borderBottom: "1px solid #1f2937", padding: "5px 0" }}>
-              <div>
-                <span style={{ color: "#93c5fd" }}>#{e.id}</span>{" "}
-                <b style={{ color: logTypeColor(e.type) }}>{e.type}</b>{" "}
-                <span style={{ color: "#6b7280" }}>{(e.ts || "").slice(11, 19)}</span>{" "}
-                <span style={{ color: "#4b5563" }}>sid:{(e.session_id || "—").slice(0, 8)}</span>
+          {logEvents.map((e) => {
+            const { prompt, ...rest } = (e.payload || {}) as any;
+            return (
+              <div key={e.id} style={{ borderBottom: "1px solid #1f2937", padding: "5px 0" }}>
+                <div>
+                  <span style={{ color: "#93c5fd" }}>#{e.id}</span>{" "}
+                  <b style={{ color: logTypeColor(e.type) }}>{e.type}</b>{" "}
+                  <span style={{ color: "#6b7280" }}>{(e.ts || "").slice(11, 19)}</span>{" "}
+                  <span style={{ color: "#4b5563" }}>sid:{(e.session_id || "—").slice(0, 8)}</span>
+                </div>
+                <pre style={{ margin: "2px 0 0", whiteSpace: "pre-wrap", color: "#9ca3af" }}>
+                  {JSON.stringify(rest, null, 1)}
+                </pre>
+                {prompt && (
+                  <details style={{ marginTop: 2 }}>
+                    <summary style={{ cursor: "pointer", color: "#38bdf8" }}>
+                      prompt ({String(prompt).length} chars)
+                    </summary>
+                    <pre style={{ margin: "2px 0 0", whiteSpace: "pre-wrap", color: "#cbd5e1",
+                      background: "#111827", padding: 6, borderRadius: 4 }}>{prompt}</pre>
+                  </details>
+                )}
               </div>
-              <pre style={{ margin: "2px 0 0", whiteSpace: "pre-wrap", color: "#9ca3af" }}>
-                {JSON.stringify(e.payload, null, 1)}
-              </pre>
-            </div>
-          ))}
+            );
+          })}
         </aside>
       )}
     </>

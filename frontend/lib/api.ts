@@ -88,10 +88,11 @@ export const api = {
       body: JSON.stringify({ problem_id: problemId, answer }),
     }),
 
-  sessionStreamUrl: (id: string, opts: { skill?: string; difficulty?: number } = {}) => {
+  sessionStreamUrl: (id: string, opts: { skill?: string; difficulty?: number; logPrompt?: boolean } = {}) => {
     const p = new URLSearchParams();
     if (opts.skill) p.set("skill", opts.skill);
     if (opts.difficulty) p.set("difficulty", String(opts.difficulty));
+    if (opts.logPrompt) p.set("log_prompt", "1");
     const s = sid();
     if (s) p.set("sid", s); // EventSource can't set headers, so pass it as a query param
     const qs = p.toString();

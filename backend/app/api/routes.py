@@ -166,7 +166,8 @@ def _resolve_skill(skill: Optional[str]) -> Optional[str]:
 
 def _problem_stream(student_id: str, provider_override: Optional[str],
                     skill_override: Optional[str], difficulty: Optional[int],
-                    session_id: Optional[str] = None) -> StreamingResponse:
+                    session_id: Optional[str] = None,
+                    log_prompt: bool = False) -> StreamingResponse:
     """SSE: run the LLM generate->verify->regenerate loop in a worker thread and
     stream each step (plan, generating, rejected, accepted) to the browser."""
     with Session(engine) as check:
@@ -189,7 +190,7 @@ def _problem_stream(student_id: str, provider_override: Optional[str],
                     student, get_provider(provider_override), session=session,
                     max_regenerations=settings.max_regenerations, progress=progress,
                     skill_override=skill_override, difficulty_override=difficulty,
-                    session_id=session_id,
+                    session_id=session_id, log_prompt=log_prompt,
                 )
                 q.put({"type": "result", "accepted": result.accepted,
                        "regen_count": result.regen_count,
@@ -222,9 +223,11 @@ def next_problem_stream(
     skill: Optional[str] = Query(None),
     difficulty: Optional[int] = Query(None, ge=1, le=5),
     session_id: Optional[str] = Query(None),  # EventSource can't set headers
+    log_prompt: bool = Query(False),
 ):
     provider_override = None if provider in (None, "", "auto", "default") else provider
-    return _problem_stream(student_id, provider_override, _resolve_skill(skill), difficulty, session_id)
+    return _problem_stream(student_id, provider_override, _resolve_skill(skill), difficulty,
+                           session_id, log_prompt)
 
 
 # ---------- attempts (observe -> assessor -> save state) ----------
@@ -426,6 +429,7 @@ def session_next_problem_stream(
     skill: Optional[str] = Query(None),
     difficulty: Optional[int] = Query(None, ge=1, le=5),
     sid: Optional[str] = Query(None),  # login-session id (EventSource can't set headers)
+    log_prompt: bool = Query(False),
     session: Session = Depends(get_session),
 ):
     """Stream the LLM loop with the session's model.
@@ -436,7 +440,8 @@ def session_next_problem_stream(
     student = session.get(Student, session_id)
     if not student:
         raise HTTPException(404, "session not found")
-    return _problem_stream(session_id, student.current_model or None, _resolve_skill(skill), difficulty, sid)
+    return _problem_stream(session_id, student.current_model or None, _resolve_skill(skill),
+                           difficulty, sid, log_prompt)
 
 
 @router.post("/sessions/{session_id}/attempts")

@@ -101,6 +101,7 @@ def generate_next_problem(
     skill_override: Optional[str] = None,
     difficulty_override: Optional[int] = None,
     session_id: Optional[str] = None,
+    log_prompt: bool = False,
 ) -> GenerationResult:
     _session_ctx.set(session_id)
     # 1-2. Observe + student model (the skill vector is maintained on the Student).
@@ -148,10 +149,14 @@ def generate_next_problem(
               feedback=feedback_in, prompt=prompt)
         # Logged BEFORE the (potentially slow) model call, so the log shows we're
         # waiting on the LLM rather than hung. `candidate`/`reject` report gen_ms.
-        _log(session, student.id, "generate_start",
-             {"attempt": attempt, "is_regeneration": attempt > 0, "skill": skill,
-              "difficulty_target": difficulty_target, "context_id": context.get("id"),
-              "provider": provider_label, "feedback_in": feedback_in, "prompt_chars": len(prompt)})
+        # The full prompt is logged only when explicitly requested (it's large).
+        start_payload = {"attempt": attempt, "is_regeneration": attempt > 0, "skill": skill,
+                         "difficulty_target": difficulty_target, "context_id": context.get("id"),
+                         "provider": provider_label, "feedback_in": feedback_in,
+                         "prompt_chars": len(prompt)}
+        if log_prompt:
+            start_payload["prompt"] = prompt
+        _log(session, student.id, "generate_start", start_payload)
 
         t_gen = time.monotonic()
         try:
