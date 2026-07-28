@@ -17,6 +17,27 @@ def init_db() -> None:
     from . import models  # noqa: F401
 
     SQLModel.metadata.create_all(engine)
+    _ensure_columns()
+
+
+def _ensure_columns() -> None:
+    """Add columns introduced after a table was first created.
+
+    SQLModel.create_all() creates missing *tables* but never ALTERs existing
+    ones, so a pre-existing stemgen.db would be missing newer Student columns.
+    For the SQLite dev DB we add them in place (SQLite supports ADD COLUMN),
+    preserving existing rows. Postgres deployments should use real migrations.
+    """
+    if not settings.database_url.startswith("sqlite"):
+        return
+    from sqlalchemy import inspect, text
+
+    wanted = {"reset_token_hash": "TEXT", "reset_expires_at": "DATETIME"}
+    existing = {c["name"] for c in inspect(engine).get_columns("students")}
+    with engine.begin() as conn:
+        for col, coltype in wanted.items():
+            if col not in existing:
+                conn.execute(text(f"ALTER TABLE students ADD COLUMN {col} {coltype}"))
 
 
 def get_session() -> Iterator[Session]:

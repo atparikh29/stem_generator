@@ -63,6 +63,15 @@ export const api = {
   login: (username: string, password: string) =>
     req("/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
 
+  forgotPassword: (username: string) =>
+    req("/auth/forgot-password", { method: "POST", body: JSON.stringify({ username }) }),
+
+  resetPassword: (username: string, token: string, new_password: string) =>
+    req("/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ username, token, new_password }),
+    }),
+
   // ----- session flow -----
   createSession: (body: {
     name?: string; context_id: string; skill: string; difficulty: number; model: string;

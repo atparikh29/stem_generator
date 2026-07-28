@@ -29,3 +29,9 @@ def verify_password(password: str, stored: str) -> bool:
         return hmac.compare_digest(dk.hex(), expected)  # constant-time compare
     except (ValueError, AttributeError):
         return False
+
+
+def new_reset_token() -> str:
+    """A short-lived, URL-safe secret for a password reset. Only its hash (via
+    hash_password) is persisted; the raw token is shown to the user once."""
+    return secrets.token_urlsafe(24)

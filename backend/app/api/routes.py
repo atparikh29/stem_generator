@@ -6,6 +6,7 @@ import queue
 import random
 import threading
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -15,7 +16,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from ..agents import assessor, grader, orchestrator
-from ..auth import hash_password, verify_password
+from ..auth import hash_password, new_reset_token, verify_password
 from ..config import settings
 from ..content import problem_bank
 from ..content.skills import SKILLS, all_skills
@@ -73,6 +74,19 @@ class RegisterBody(BaseModel):
 class LoginBody(BaseModel):
     username: str
     password: str
+
+
+class ForgotBody(BaseModel):
+    username: str
+
+
+class ResetBody(BaseModel):
+    username: str
+    token: str
+    new_password: str
+
+
+RESET_TOKEN_TTL_MINUTES = 30
 
 
 class UiEventBody(BaseModel):
@@ -329,6 +343,64 @@ def login(body: LoginBody, session: Session = Depends(get_session)):
     sid = str(uuid.uuid4())
     session.add(Event(student_id=student.id, session_id=sid, type="login", payload={"username": student.username}))
     session.commit()
+    return {**jsonable_encoder(student), "session_id": sid}
+
+
+@router.post("/auth/forgot-password")
+def forgot_password(body: ForgotBody, session: Session = Depends(get_session)):
+    """Issue a short-lived reset token.
+
+    This offline app has no mail server, so the token is returned directly
+    (dev delivery) instead of emailed. Only the token's hash is stored. The
+    response is generic whether or not the account exists (no user enumeration);
+    the token is included only when it was actually issued.
+    """
+    resp = {"ok": True, "message": "If that account exists, a reset token has been issued."}
+    student = session.exec(select(Student).where(Student.username == body.username.strip())).first()
+    if not student:
+        return resp
+    token = new_reset_token()
+    student.reset_token_hash = hash_password(token)
+    student.reset_expires_at = datetime.now(timezone.utc) + timedelta(minutes=RESET_TOKEN_TTL_MINUTES)
+    session.add(student)
+    session.add(Event(student_id=student.id, type="forgot_password", payload={"username": student.username}))
+    session.commit()
+    resp.update({
+        "reset_token": token,  # dev delivery: would be emailed in production
+        "expires_in_minutes": RESET_TOKEN_TTL_MINUTES,
+        "dev_note": "No mail server in this app — token returned directly instead of emailed.",
+    })
+    return resp
+
+
+@router.post("/auth/reset-password")
+def reset_password(body: ResetBody, session: Session = Depends(get_session)):
+    """Consume a valid, unexpired reset token and set a new password.
+
+    On success the token is cleared and a new login session is returned so the
+    user is signed in immediately (same shape as /auth/login)."""
+    if not body.new_password:
+        raise HTTPException(400, "new password is required")
+    student = session.exec(select(Student).where(Student.username == body.username.strip())).first()
+    if not student or not student.reset_token_hash or not student.reset_expires_at \
+            or not verify_password(body.token, student.reset_token_hash):
+        raise HTTPException(400, "invalid or expired reset token")
+    # SQLite may hand the datetime back tz-naive; treat stored times as UTC.
+    exp = student.reset_expires_at
+    if exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    if exp < datetime.now(timezone.utc):
+        raise HTTPException(400, "invalid or expired reset token")
+
+    student.password_hash = hash_password(body.new_password)
+    student.reset_token_hash = None
+    student.reset_expires_at = None
+    sid = str(uuid.uuid4())
+    session.add(student)
+    session.add(Event(student_id=student.id, session_id=sid, type="password_reset",
+                      payload={"username": student.username}))
+    session.commit()
+    session.refresh(student)
     return {**jsonable_encoder(student), "session_id": sid}
 
 

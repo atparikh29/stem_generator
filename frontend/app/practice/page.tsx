@@ -48,8 +48,12 @@ export default function Practice() {
   // auth
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [authMode, setAuthMode] = useState<"login" | "register" | "forgot" | "reset">("login");
   const [authError, setAuthError] = useState<string | null>(null);
+  // password reset
+  const [resetToken, setResetToken] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [resetInfo, setResetInfo] = useState<string | null>(null);
 
   // debug log panel
   const [debug, setDebug] = useState(false);
@@ -186,6 +190,48 @@ export default function Practice() {
       setView("welcome");
     } catch (e: any) {
       setAuthError("Invalid username or password.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // ---- forgot password: request a reset token (dev delivery, no email) ----
+  async function doForgot() {
+    setAuthError(null);
+    setResetInfo(null);
+    setBusy(true);
+    try {
+      const res = await api.forgotPassword(username);
+      if (res.reset_token) {
+        // No mail server: prefill the token and move straight to the reset step.
+        setResetToken(res.reset_token);
+        setResetInfo(`Reset token issued (expires in ${res.expires_in_minutes} min). Normally this would be emailed; here it's pre-filled below.`);
+      } else {
+        setResetInfo(res.message || "If that account exists, a reset token has been issued.");
+      }
+      setAuthMode("reset");
+    } catch {
+      setAuthError("Could not request a reset. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // ---- reset password: consume the token, set a new password, sign in ----
+  async function doReset() {
+    setAuthError(null);
+    setBusy(true);
+    try {
+      const s = await api.resetPassword(username, resetToken, newPassword);
+      applySavedState(s.id, s);
+      setPassword("");
+      setNewPassword("");
+      setResetToken("");
+      setResetInfo(null);
+      api.logUi(s.id, "password_reset");
+      setView("welcome");
+    } catch (e: any) {
+      setAuthError(String(e.message).includes("400") ? "Invalid or expired reset token." : "Reset failed.");
     } finally {
       setBusy(false);
     }
@@ -352,6 +398,60 @@ export default function Practice() {
   // ---------- screens ----------
   let screen: ReactNode = null;
   if (view === "loading") screen = <main><h1>Practice</h1><p>Loading…</p></main>;
+  else if (view === "auth" && authMode === "forgot") {
+    screen = (
+      <main>
+        <h1>Forgot password</h1>
+        <p style={{ maxWidth: 380, color: "#374151" }}>Enter your username to get a reset token.</p>
+        <section style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 320 }}>
+          <label>Username<br />
+            <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username"
+              onKeyDown={(e) => e.key === "Enter" && username && doForgot()}
+              style={{ padding: 8, width: "100%" }} />
+          </label>
+          {authError && <p style={{ color: "#b91c1c", margin: 0 }}>{authError}</p>}
+        </section>
+        <button onClick={doForgot} disabled={busy || !username}>{busy ? "…" : "Send reset token →"}</button>{" "}
+        <button onClick={() => { setAuthMode("login"); setAuthError(null); }} style={{ fontSize: 13 }}>
+          Back to log in
+        </button>
+      </main>
+    );
+  }
+  else if (view === "auth" && authMode === "reset") {
+    screen = (
+      <main>
+        <h1>Reset password</h1>
+        {resetInfo && (
+          <p style={{ maxWidth: 420, background: "#ecfeff", border: "1px solid #a5f3fc",
+            borderRadius: 8, padding: "8px 10px", color: "#155e75", fontSize: 13 }}>{resetInfo}</p>
+        )}
+        <section style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 380 }}>
+          <label>Username<br />
+            <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username"
+              style={{ padding: 8, width: "100%" }} />
+          </label>
+          <label>Reset token<br />
+            <input value={resetToken} onChange={(e) => setResetToken(e.target.value)}
+              style={{ padding: 8, width: "100%", fontFamily: "ui-monospace, Menlo, monospace" }} />
+          </label>
+          <label>New password<br />
+            <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
+              autoComplete="new-password"
+              onKeyDown={(e) => e.key === "Enter" && resetToken && newPassword && doReset()}
+              style={{ padding: 8, width: "100%" }} />
+          </label>
+          {authError && <p style={{ color: "#b91c1c", margin: 0 }}>{authError}</p>}
+        </section>
+        <button onClick={doReset} disabled={busy || !username || !resetToken || !newPassword}>
+          {busy ? "…" : "Reset password & sign in →"}
+        </button>{" "}
+        <button onClick={() => { setAuthMode("login"); setAuthError(null); setResetInfo(null); }} style={{ fontSize: 13 }}>
+          Back to log in
+        </button>
+      </main>
+    );
+  }
   else if (view === "auth") {
     const isReg = authMode === "register";
     screen = (
@@ -384,6 +484,13 @@ export default function Practice() {
         <button onClick={() => { setAuthMode(isReg ? "login" : "register"); setAuthError(null); }} style={{ fontSize: 13 }}>
           {isReg ? "Have an account? Log in" : "New here? Create an account"}
         </button>
+        {!isReg && (
+          <>{" "}
+            <button onClick={() => { setAuthMode("forgot"); setAuthError(null); setResetInfo(null); }} style={{ fontSize: 13 }}>
+              Forgot password?
+            </button>
+          </>
+        )}
       </main>
     );
   }
