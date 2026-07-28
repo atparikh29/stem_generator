@@ -6,7 +6,20 @@ import { api, Problem, SID_KEY } from "../../lib/api";
 const SESSION_KEY = "stemgen.sessionId";
 const USER_KEY = "stemgen.username";
 
-type View = "loading" | "auth" | "welcome" | "settings" | "practice";
+type View = "loading" | "auth" | "welcome" | "settings" | "practice" | "stats";
+
+interface SkillStat {
+  skill: string; domain: string; delivered: number; attempts: number;
+  correct: number; incorrect: number; accuracy: number | null; mastery: number;
+  difficulty_first: number | null; difficulty_latest: number | null;
+  difficulty_min: number | null; difficulty_max: number | null; difficulty_series: number[];
+}
+interface Stats {
+  sessions: number; total_delivered: number; total_attempts: number;
+  correct: number; incorrect: number; accuracy: number | null;
+  total_time_seconds: number; first_seen: string | null; last_seen: string | null;
+  per_skill: SkillStat[];
+}
 
 interface Attempt {
   status: string;
@@ -62,6 +75,9 @@ export default function Practice() {
   const [logPrompt, setLogPrompt] = useState(false); // log/show the full LLM prompt
   const [semanticLlm, setSemanticLlm] = useState(true); // advanced: LLM clarity check on/off
   const [genSeconds, setGenSeconds] = useState(0); // live "still working" counter
+
+  // progress / stats dashboard
+  const [stats, setStats] = useState<Stats | null>(null);
 
   // ---- bootstrap: load catalogs + detect returning session ----
   useEffect(() => {
@@ -237,6 +253,19 @@ export default function Practice() {
     }
   }
 
+  // ---- progress dashboard ----
+  async function openStats() {
+    if (!sessionId) return;
+    logUi("open_stats");
+    setBusy(true);
+    try {
+      setStats(await api.stats(sessionId));
+      setView("stats");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function logout() {
     logUi("logout");
     localStorage.removeItem(SESSION_KEY);
@@ -340,6 +369,46 @@ export default function Practice() {
   }
   const sel = { padding: 6, marginLeft: 6 } as const;
   const domains = Array.from(new Set(skills.map((s) => s.domain)));
+
+  function fmtDuration(sec: number): string {
+    if (!sec || sec < 1) return "under 1m";
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+    if (h) return `${h}h ${m}m`;
+    if (m) return `${m}m`;
+    return `${Math.floor(sec)}s`;
+  }
+
+  function masteryBar(m: number) {
+    const pct = Math.round(m * 100);
+    const color = m >= 0.66 ? "#16a34a" : m >= 0.33 ? "#f59e0b" : "#ef4444";
+    return (
+      <div>
+        <div style={{ background: "#e5e7eb", borderRadius: 6, height: 8, width: 100, overflow: "hidden" }}>
+          <div style={{ background: color, width: `${pct}%`, height: "100%" }} />
+        </div>
+        <span style={{ fontSize: 11, color: "#64748b" }}>{pct}%</span>
+      </div>
+    );
+  }
+
+  // Sparkline of the difficulty of each delivered problem (chronological), 1..5.
+  function difficultyCell(s: SkillStat) {
+    const ser = s.difficulty_series || [];
+    if (!ser.length) return <span style={{ color: "#cbd5e1" }}>—</span>;
+    return (
+      <div>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 24 }}>
+          {ser.slice(-14).map((d, i) => (
+            <div key={i} title={`difficulty ${d}`} style={{ width: 5, height: `${(d / 5) * 100}%`,
+              background: "#6366f1", borderRadius: 1 }} />
+          ))}
+        </div>
+        <span style={{ fontSize: 11, color: "#64748b" }}>
+          {s.difficulty_first}→{s.difficulty_latest} (min {s.difficulty_min}, max {s.difficulty_max})
+        </span>
+      </div>
+    );
+  }
 
   function settingsForm(submitLabel: string, onSubmit: () => void) {
     return (
@@ -502,7 +571,10 @@ export default function Practice() {
         <p>Change settings before your next problem?</p>
         <button onClick={() => { logUi("open_settings"); setView("settings"); }}>Yes, change settings</button>{" "}
         <button onClick={() => { logUi("welcome_continue", { model, skill, difficulty }); nextSameSettings(); }} disabled={busy}>No, continue →</button>
-        <p><button onClick={logout} style={{ fontSize: 12 }}>Log out</button></p>
+        <p>
+          <button onClick={openStats} disabled={busy} style={{ fontSize: 13 }}>📊 View my progress</button>{" "}
+          <button onClick={logout} style={{ fontSize: 12 }}>Log out</button>
+        </p>
       </main>
     );
   else if (view === "settings")
@@ -513,6 +585,80 @@ export default function Practice() {
         <button onClick={() => { logUi("cancel_settings"); setView("practice"); }} disabled={!problem}>Cancel</button>
       </main>
     );
+  else if (view === "stats") {
+    const active = (stats?.per_skill || []).filter((s) => s.delivered > 0 || s.attempts > 0);
+    const untouched = (stats?.per_skill || []).length - active.length;
+    const card = (label: string, value: ReactNode, sub?: string) => (
+      <div style={{ flex: "1 1 120px", background: "#f8fafc", border: "1px solid #e2e8f0",
+        borderRadius: 10, padding: "12px 14px" }}>
+        <div style={{ fontSize: 24, fontWeight: 700 }}>{value}</div>
+        <div style={{ fontSize: 12, color: "#64748b" }}>{label}</div>
+        {sub && <div style={{ fontSize: 11, color: "#94a3b8" }}>{sub}</div>}
+      </div>
+    );
+    const th = { padding: "6px 10px" } as const;
+    const td = { padding: "8px 10px" } as const;
+    screen = (
+      <main>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+          <h1>📊 Progress{username ? ` — ${username}` : ""}</h1>
+          <button onClick={() => setView(problem ? "practice" : "welcome")} style={{ fontSize: 13 }}>← Back</button>
+        </div>
+        {!stats ? <p>Loading…</p> : (
+          <>
+            <section style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 20 }}>
+              {card("Problems solved", stats.correct, `${stats.total_delivered} served`)}
+              {card("Attempts", stats.total_attempts, `${stats.incorrect} incorrect`)}
+              {card("Accuracy", stats.accuracy != null ? `${Math.round(stats.accuracy * 100)}%` : "—")}
+              {card("Time spent", fmtDuration(stats.total_time_seconds))}
+              {card("Sessions", stats.sessions)}
+            </section>
+
+            <h2 style={{ fontSize: 18 }}>By skill</h2>
+            {active.length === 0 ? (
+              <p style={{ color: "#64748b" }}>No problems attempted yet — solve a few and come back!</p>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 14 }}>
+                  <thead>
+                    <tr style={{ textAlign: "left", color: "#64748b", borderBottom: "2px solid #e2e8f0" }}>
+                      <th style={th}>Skill</th><th style={th}>Solved</th><th style={th}>Correct / Wrong</th>
+                      <th style={th}>Accuracy</th><th style={th}>Mastery</th><th style={th}>Difficulty over time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {active.map((s) => (
+                      <tr key={s.skill} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                        <td style={td}><b>{s.skill}</b><br />
+                          <span style={{ color: "#94a3b8", fontSize: 12 }}>{s.domain}</span></td>
+                        <td style={td}>{s.correct}<span style={{ color: "#cbd5e1" }}>/{s.delivered}</span></td>
+                        <td style={td}>
+                          <span style={{ color: "#16a34a" }}>{s.correct}</span>
+                          {" / "}<span style={{ color: "#dc2626" }}>{s.incorrect}</span>
+                        </td>
+                        <td style={td}>{s.accuracy != null ? `${Math.round(s.accuracy * 100)}%` : "—"}</td>
+                        <td style={{ ...td, minWidth: 120 }}>{masteryBar(s.mastery)}</td>
+                        <td style={td}>{difficultyCell(s)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {untouched > 0 && (
+              <p style={{ color: "#94a3b8", fontSize: 13, marginTop: 10 }}>
+                + {untouched} skills not yet practiced.
+              </p>
+            )}
+            <p style={{ marginTop: 20 }}>
+              <button onClick={() => setView(problem ? "practice" : "welcome")}>← Back to practice</button>{" "}
+              <button onClick={openStats} disabled={busy} style={{ fontSize: 13 }}>↻ Refresh</button>
+            </p>
+          </>
+        )}
+      </main>
+    );
+  }
   else
     screen = (
     <main>
@@ -577,7 +723,8 @@ export default function Practice() {
           title="The Planner picks what to practice next (changes skill/difficulty)">
           Adaptive next (Planner) →
         </button>{" "}
-        <button onClick={() => { logUi("open_settings"); setView("settings"); }} disabled={busy}>Change settings</button>
+        <button onClick={() => { logUi("open_settings"); setView("settings"); }} disabled={busy}>Change settings</button>{" "}
+        <button onClick={openStats} disabled={busy}>📊 Progress</button>
       </p>
     </main>
   );

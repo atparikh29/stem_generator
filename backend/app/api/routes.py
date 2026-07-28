@@ -292,6 +292,102 @@ def log_ui_event(student_id: str, body: UiEventBody, session: Session = Depends(
     return {"ok": True}
 
 
+@router.get("/students/{student_id}/stats")
+def student_stats(student_id: str, session: Session = Depends(get_session)):
+    """Aggregated progress for a USER (across all their sessions): problems solved,
+    correct/incorrect, accuracy, time spent, session count, and per-skill mastery
+    + difficulty progression. Derived from the event log + delivered problems."""
+    from collections import defaultdict
+
+    student = session.get(Student, student_id)
+    if not student:
+        raise HTTPException(404, "session not found")
+
+    events = session.exec(
+        select(Event).where(Event.student_id == student_id).order_by(Event.ts)
+    ).all()
+    problems = session.exec(
+        select(ProblemRecord)
+        .where(ProblemRecord.student_id == student_id, ProblemRecord.status == "delivered")
+        .order_by(ProblemRecord.id)
+    ).all()
+
+    # Time spent ≈ sum over login sessions of (last event − first event).
+    per_session_ts: dict[str, list] = defaultdict(list)
+    for e in events:
+        if e.session_id and e.ts:
+            per_session_ts[e.session_id].append(e.ts)
+
+    def _span_seconds(ts_list: list) -> float:
+        if len(ts_list) < 2:
+            return 0.0
+        try:
+            return max(0.0, (max(ts_list) - min(ts_list)).total_seconds())
+        except Exception:  # noqa: BLE001
+            return 0.0
+
+    total_time = int(sum(_span_seconds(v) for v in per_session_ts.values()))
+    attempts = [e for e in events if e.type == "attempt"]
+    correct = sum(1 for e in attempts if (e.payload or {}).get("correct"))
+
+    skill_vector = student.skill_vector or {}
+    per: dict[str, dict] = {}
+
+    def bucket(skill: str) -> dict:
+        if skill not in per:
+            dom = ""
+            meta = SKILLS.get(skill)
+            if meta:
+                dom = meta["domain"].value
+            per[skill] = {
+                "skill": skill, "domain": dom, "delivered": 0, "attempts": 0,
+                "correct": 0, "incorrect": 0, "difficulty_series": [],
+                "mastery": round(float(skill_vector.get(skill, 0.0)), 3),
+            }
+        return per[skill]
+
+    for p in problems:
+        b = bucket(p.skill)
+        b["delivered"] += 1
+        b["difficulty_series"].append(p.difficulty_target)
+        if not b["domain"]:
+            b["domain"] = p.domain
+    for e in attempts:
+        pay = e.payload or {}
+        sk = pay.get("skill")
+        if not sk:
+            continue
+        b = bucket(sk)
+        b["attempts"] += 1
+        b["correct" if pay.get("correct") else "incorrect"] += 1
+    for sk in skill_vector:  # include skills with mastery but no activity yet
+        bucket(sk)
+
+    per_skill = []
+    for b in per.values():
+        ser = b["difficulty_series"]
+        b["difficulty_first"] = ser[0] if ser else None
+        b["difficulty_latest"] = ser[-1] if ser else None
+        b["difficulty_min"] = min(ser) if ser else None
+        b["difficulty_max"] = max(ser) if ser else None
+        b["accuracy"] = round(b["correct"] / b["attempts"], 3) if b["attempts"] else None
+        per_skill.append(b)
+    per_skill.sort(key=lambda x: (-x["delivered"], -x["attempts"], x["skill"]))
+
+    return {
+        "sessions": len({e.session_id for e in events if e.session_id}),
+        "total_delivered": len(problems),
+        "total_attempts": len(attempts),
+        "correct": correct,
+        "incorrect": len(attempts) - correct,
+        "accuracy": round(correct / len(attempts), 3) if attempts else None,
+        "total_time_seconds": total_time,
+        "first_seen": events[0].ts.isoformat() if events else None,
+        "last_seen": events[-1].ts.isoformat() if events else None,
+        "per_skill": per_skill,
+    }
+
+
 @router.get("/students/{student_id}/events")
 def list_events(student_id: str, limit: int = 500, session_id: Optional[str] = Query(None),
                 session: Session = Depends(get_session)):

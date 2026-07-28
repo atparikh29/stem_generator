@@ -41,6 +41,8 @@ export const api = {
   events: (userId: string, sessionId?: string) =>
     req(`/students/${userId}/events${sessionId ? `?session_id=${sessionId}` : ""}`),
 
+  stats: (userId: string) => req(`/students/${userId}/stats`),
+
   // Fire-and-forget: record a GUI action into the event log (never blocks the UI).
   logUi: (userId: string, action: string, detail: Record<string, any> = {}) =>
     req(`/students/${userId}/ui-events`, {
