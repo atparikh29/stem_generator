@@ -360,6 +360,19 @@ export default function Practice() {
   // ---------- shared UI bits ----------
   // Color-code event types in the debug log: green=accepted/delivered,
   // red=rejected/exhausted, amber=everything else.
+  // The backend stores UTC but serializes without a timezone marker, so mark it
+  // UTC before converting to the viewer's local date + time.
+  function fmtTs(ts?: string): string {
+    if (!ts) return "—";
+    const hasTz = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(ts);
+    const d = new Date(hasTz ? ts : ts.replace(" ", "T") + "Z");
+    if (isNaN(d.getTime())) return ts;
+    return d.toLocaleString(undefined, {
+      year: "numeric", month: "short", day: "numeric",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+    });
+  }
+
   function logTypeColor(type: string): string {
     if (["accept", "deliver"].includes(type)) return "#4ade80";
     if (["reject", "exhausted"].includes(type)) return "#f87171";
@@ -784,7 +797,7 @@ export default function Practice() {
                 <div>
                   <span style={{ color: "#93c5fd" }}>#{e.id}</span>{" "}
                   <b style={{ color: logTypeColor(e.type) }}>{e.type}</b>{" "}
-                  <span style={{ color: "#6b7280" }}>{(e.ts || "").slice(11, 19)}</span>{" "}
+                  <span style={{ color: "#6b7280" }}>{fmtTs(e.ts)}</span>{" "}
                   <span style={{ color: "#4b5563" }}>sid:{(e.session_id || "—").slice(0, 8)}</span>
                 </div>
                 <pre style={{ margin: "2px 0 0", whiteSpace: "pre-wrap", color: "#9ca3af" }}>
