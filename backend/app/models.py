@@ -26,8 +26,10 @@ class Event(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     ts: datetime = Field(default_factory=_utcnow, index=True)
-    student_id: str = Field(index=True)
-    type: str = Field(index=True)  # e.g. observe, plan, generate, verify, deliver, fail
+    student_id: str = Field(index=True)          # the USER (account) id
+    session_id: Optional[str] = Field(default=None, index=True)  # a login/browser session
+    type: str = Field(index=True)  # register|login|onboard|adjust_settings|observe|plan|
+                                   # context|generate|fail|deliver|attempt|error
     payload: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
 
 
@@ -39,6 +41,12 @@ class Student(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
     name: str = ""
+    # Auth (optional): a session may be anonymous or tied to a login.
+    username: Optional[str] = Field(default=None, index=True, unique=True)
+    password_hash: str = Field(default="", exclude=True)  # excluded from API responses
+    # Password reset: hash of a short-lived token + its expiry (both excluded).
+    reset_token_hash: Optional[str] = Field(default=None, exclude=True)
+    reset_expires_at: Optional[datetime] = Field(default=None, exclude=True)
     # skill -> mastery in [0, 1]
     skill_vector: dict[str, float] = Field(default_factory=dict, sa_column=Column(JSON))
     misconceptions: list[str] = Field(default_factory=list, sa_column=Column(JSON))

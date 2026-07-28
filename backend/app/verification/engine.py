@@ -8,6 +8,9 @@ semantic check, then applies the acceptance rule:
 """
 from __future__ import annotations
 
+import time
+from typing import Callable, Optional
+
 from ..llm.base import LLMProvider
 from ..schemas.generator import GeneratorOutput, MathTask, PhysicsTask
 from ..schemas.verifier import VerifierReport
@@ -16,13 +19,27 @@ from . import difficulty, math_verifier, physics_verifier, semantic
 from .result import CheckResult, FailureCode
 
 
-def verify(problem: GeneratorOutput, provider: LLMProvider) -> VerifierReport:
+def verify(problem: GeneratorOutput, provider: LLMProvider,
+           use_llm_semantic: bool = True,
+           on_step: Optional[Callable[[str, dict], None]] = None) -> VerifierReport:
+    """Run the four verification sub-checks in order.
+
+    `on_step(name, data)` is called after each sub-check (translation, core,
+    difficulty, semantic) with its outcome + `ms` timing, so the caller can log
+    exactly where verification spends time (the semantic step makes an LLM call).
+    """
     failures: list[FailureCode] = []
     checks: dict[str, dict] = {}
 
+    def step(name: str, data: dict, t0: float) -> None:
+        if on_step is not None:
+            on_step(name, {**data, "ms": int((time.monotonic() - t0) * 1000)})
+
     # 1. Translation Layer: JSON -> executable symbolic form (fail closed).
+    t0 = time.monotonic()
     trec = translate(problem.task)
     checks["translation"] = trec.model_dump()
+    step("translation", {"ok": trec.ok, "detail": getattr(trec, "error", "") or ""}, t0)
     if not trec.ok:
         return VerifierReport(
             accepted=False,
@@ -31,6 +48,7 @@ def verify(problem: GeneratorOutput, provider: LLMProvider) -> VerifierReport:
         )
 
     # 2. Deterministic solver/verifier (math or physics).
+    t0 = time.monotonic()
     if isinstance(problem.task, MathTask):
         core = math_verifier.verify(problem.task)
     elif isinstance(problem.task, PhysicsTask):
@@ -39,18 +57,25 @@ def verify(problem: GeneratorOutput, provider: LLMProvider) -> VerifierReport:
         core = CheckResult.fail(FailureCode.MATH_INVALID, "unknown task type")
     checks["core"] = _dump(core)
     failures += core.failures
+    step("core", {"passed": core.passed,
+                  "failures": [f.value for f in core.failures], "detail": core.detail}, t0)
 
     # 3. Difficulty hit-rate (deterministic).
+    t0 = time.monotonic()
     diff = difficulty.verify(problem.task, problem.difficulty_target)
     checks["difficulty"] = _dump(diff)
     failures += diff.failures
     difficulty_observed = diff.data.get("difficulty_observed")
+    step("difficulty", {"passed": diff.passed, "difficulty_observed": difficulty_observed}, t0)
 
-    # 4. Semantic clarity (LLM, advisory).
-    sem = semantic.verify(problem.statement, provider)
+    # 4. Semantic clarity (advisory) -- LLM call unless disabled/mock.
+    t0 = time.monotonic()
+    sem = semantic.verify(problem.statement, provider, use_llm=use_llm_semantic)
     checks["semantic"] = _dump(sem)
     failures += sem.failures
     ambiguity = sem.data.get("ambiguity_score")
+    step("semantic", {"passed": sem.passed, "mode": sem.data.get("mode"),
+                      "ambiguity_score": ambiguity}, t0)
 
     # Acceptance rule: every check must pass.
     accepted = not failures

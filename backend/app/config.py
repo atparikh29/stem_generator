@@ -24,9 +24,20 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./stemgen.db"
 
+    # Per-call LLM network budget. Bounds a stalled/rate-limited provider call
+    # (e.g. the semantic clarity check's Gemini request) so it can't hang the
+    # generation loop; without this the OpenAI client waits up to ~600s.
+    llm_timeout_seconds: float = 60.0
+    llm_max_retries: int = 2
+
     # Verifier configuration
     semantic_ambiguity_threshold: float = 0.5
     max_regenerations: int = 5
+    # Whether the semantic clarity check calls the LLM (a second request per
+    # candidate) or uses the offline heuristic. Off avoids doubling provider
+    # calls / rate-limit stalls, at the cost of the LLM-graded ambiguity signal.
+    # The GUI "advanced" toggle can override this per generation.
+    semantic_llm_check: bool = True
     # Allowed |observed - target| difficulty-bin gap. 0 = exact match (strict,
     # for the formal experiment); 1 is more forgiving for demos / weaker models.
     difficulty_tolerance: int = 0

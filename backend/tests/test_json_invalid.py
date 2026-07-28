@@ -78,10 +78,15 @@ def test_loop_logs_json_invalid_then_recovers():
         assert result.regen_count == 2
         assert [a["failures"] for a in result.attempts] == [["json_invalid"], ["json_invalid"]]
 
-        # Recorded in the immutable event log.
-        fails = session.exec(select(Event).where(Event.type == "fail")).all()
+        # Recorded in the immutable event log: each attempt is a structured "reject".
+        fails = session.exec(select(Event).where(Event.type == "reject")).all()
         assert len(fails) == 2
-        assert all(e.payload["reason"] == "json_invalid" for e in fails)
+        assert all(e.payload["failure_codes"] == ["json_invalid"] for e in fails)
+        assert all(e.payload["phase"] == "parse" for e in fails)
+        # Every regeneration attempt is also logged as it starts (3: two bad + the good one).
+        starts = session.exec(select(Event).where(Event.type == "generate_start")).all()
+        assert len(starts) == 3
+        assert starts[-1].payload["is_regeneration"] is True
 
 
 def test_loop_reports_json_invalid_when_budget_exhausted():

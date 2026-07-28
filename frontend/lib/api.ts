@@ -1,11 +1,16 @@
 const BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000/api";
 export const API_BASE = BASE;
+export const SID_KEY = "stemgen.sid"; // login-session id, tagged onto the event log
+
+function sid(): string | null {
+  return typeof window !== "undefined" ? localStorage.getItem(SID_KEY) : null;
+}
 
 async function req(path: string, opts: RequestInit = {}) {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...opts,
-  });
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const s = sid();
+  if (s) headers["X-Session-Id"] = s;
+  const res = await fetch(`${BASE}${path}`, { ...opts, headers: { ...headers, ...(opts.headers as any) } });
   if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
   return res.json();
 }
@@ -33,12 +38,41 @@ export const api = {
       body: JSON.stringify({ problem_id: problemId, answer }),
     }),
 
-  events: (studentId: string) => req(`/students/${studentId}/events`),
+  events: (userId: string, sessionId?: string) =>
+    req(`/students/${userId}/events${sessionId ? `?session_id=${sessionId}` : ""}`),
 
-  skills: (): Promise<{ id: string; domain: string; method: string }[]> => req("/skills"),
+  stats: (userId: string) => req(`/students/${userId}/stats`),
+
+  // Fire-and-forget: record a GUI action into the event log (never blocks the UI).
+  logUi: (userId: string, action: string, detail: Record<string, any> = {}) =>
+    req(`/students/${userId}/ui-events`, {
+      method: "POST",
+      body: JSON.stringify({ action, detail }),
+    }).catch(() => {}),
+
+  skills: (): Promise<{ id: string; domain: string; method: string; difficulties: number[] }[]> =>
+    req("/skills"),
 
   contexts: (): Promise<{ id: string; noun: string; narrative: string; interest_tags: string[] }[]> =>
     req("/contexts"),
+
+  // ----- auth -----
+  register: (body: {
+    username: string; password: string; context_id: string; skill: string;
+    difficulty: number; model: string;
+  }) => req("/auth/register", { method: "POST", body: JSON.stringify(body) }),
+
+  login: (username: string, password: string) =>
+    req("/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
+
+  forgotPassword: (username: string) =>
+    req("/auth/forgot-password", { method: "POST", body: JSON.stringify({ username }) }),
+
+  resetPassword: (username: string, token: string, new_password: string) =>
+    req("/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ username, token, new_password }),
+    }),
 
   // ----- session flow -----
   createSession: (body: {
@@ -65,10 +99,14 @@ export const api = {
       body: JSON.stringify({ problem_id: problemId, answer }),
     }),
 
-  sessionStreamUrl: (id: string, opts: { skill?: string; difficulty?: number } = {}) => {
+  sessionStreamUrl: (id: string, opts: { skill?: string; difficulty?: number; logPrompt?: boolean; semanticLlm?: boolean } = {}) => {
     const p = new URLSearchParams();
     if (opts.skill) p.set("skill", opts.skill);
     if (opts.difficulty) p.set("difficulty", String(opts.difficulty));
+    if (opts.logPrompt) p.set("log_prompt", "1");
+    if (opts.semanticLlm !== undefined) p.set("semantic_llm", String(opts.semanticLlm));
+    const s = sid();
+    if (s) p.set("sid", s); // EventSource can't set headers, so pass it as a query param
     const qs = p.toString();
     return `${API_BASE}/sessions/${id}/next-problem/stream${qs ? `?${qs}` : ""}`;
   },
