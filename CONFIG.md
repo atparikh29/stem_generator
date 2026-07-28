@@ -22,12 +22,15 @@ Env vars are UPPER_SNAKE_CASE of the field name (e.g. `MAX_REGENERATIONS`).
 | `OPENAI_API_KEY` / `OPENAI_MODEL` / `OPENAI_BASE_URL` | – / `gpt-5.2` / – | OpenAI, or Llama via a compatible base URL (e.g. Ollama `http://localhost:11434/v1`) |
 | `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | – / `claude-opus-4-8` | Claude |
 | `GEMINI_API_KEY` / `GEMINI_MODEL` / `GEMINI_BASE_URL` | – / `gemini-2.5-flash` / Google OpenAI-compat URL | Gemini |
+| `LLM_TIMEOUT_SECONDS` | `60` | per-call network timeout; bounds a stalled/rate-limited provider call so it can't hang the loop |
+| `LLM_MAX_RETRIES` | `2` | retry budget for a single LLM HTTP call |
 
 ### Database
 | `DATABASE_URL` | `sqlite:///./stemgen.db` | SQLite (default) or `postgresql+psycopg://…` |
 
 ### Verifier
 | `SEMANTIC_AMBIGUITY_THRESHOLD` | `0.5` | reject if the LLM clarity score exceeds this |
+| `SEMANTIC_LLM_CHECK` | `true` | `true` = semantic clarity uses a 2nd LLM call; `false` = offline heuristic only (avoids doubling provider calls / rate-limit stalls). The Debug panel's Advanced toggle overrides this per generation. |
 | `MAX_REGENERATIONS` | `5` | retry budget for the generate→verify loop |
 | `DIFFICULTY_TOLERANCE` | `0` | allowed `|observed − target|` bin gap; 0 = strict (experiment), 1–2 = forgiving |
 

@@ -56,6 +56,7 @@ export default function Practice() {
   const [logEvents, setLogEvents] = useState<any[]>([]);
   const [logScope, setLogScope] = useState<"session" | "user">("session");
   const [logPrompt, setLogPrompt] = useState(false); // log/show the full LLM prompt
+  const [semanticLlm, setSemanticLlm] = useState(true); // advanced: LLM clarity check on/off
   const [genSeconds, setGenSeconds] = useState(0); // live "still working" counter
 
   // ---- bootstrap: load catalogs + detect returning session ----
@@ -247,7 +248,7 @@ export default function Practice() {
     setRequestedDiff(opts.difficulty ?? null);
     setView("practice");
     setBusy(true);
-    const es = new EventSource(api.sessionStreamUrl(sessionId, { ...opts, logPrompt }));
+    const es = new EventSource(api.sessionStreamUrl(sessionId, { ...opts, logPrompt, semanticLlm }));
     es.onmessage = (e) => {
       const ev = JSON.parse(e.data);
       if (ev.type === "progress") setAttempts((a) => [...a, ev as Attempt]);
@@ -288,6 +289,7 @@ export default function Practice() {
     if (["accept", "deliver"].includes(type)) return "#4ade80";
     if (["reject", "exhausted"].includes(type)) return "#f87171";
     if (type === "ui") return "#38bdf8"; // GUI actions — cyan
+    if (["verify_start", "verify_step"].includes(type)) return "#a78bfa"; // verify phase — purple
     return "#fbbf24";
   }
   const sel = { padding: 6, marginLeft: 6 } as const;
@@ -506,6 +508,18 @@ export default function Practice() {
               Full prompt will be logged on your next generation (LLM models only).
             </div>
           )}
+          <details style={{ marginBottom: 8, background: "#111827", borderRadius: 6, padding: "4px 8px" }}>
+            <summary style={{ cursor: "pointer", color: "#93c5fd", fontSize: 12 }}>⚙ Advanced</summary>
+            <label style={{ display: "block", marginTop: 6, fontSize: 12 }}>
+              <input type="checkbox" checked={semanticLlm}
+                onChange={(e) => { setSemanticLlm(e.target.checked); logUi("toggle_semantic_llm", { on: e.target.checked }); }} />
+              {" "}LLM clarity check (2nd model call per problem)
+            </label>
+            <div style={{ color: "#6b7280", fontSize: 11, marginTop: 2 }}>
+              Off = offline heuristic only; avoids doubling {model} calls and the rate-limit
+              stall you can hit on the verify step. Applies to LLM models on the next generation.
+            </div>
+          </details>
           <div style={{ color: "#6b7280", marginBottom: 6 }}>
             user {sessionId?.slice(0, 8)} · {logEvents.length} events
           </div>

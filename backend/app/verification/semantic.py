@@ -36,11 +36,16 @@ def _heuristic_score(statement: str) -> float:
     return min(score, 1.0)
 
 
-def verify(statement: str, provider: LLMProvider) -> CheckResult:
+def verify(statement: str, provider: LLMProvider, use_llm: bool = True) -> CheckResult:
     threshold = settings.semantic_ambiguity_threshold
-    if settings.llm_provider == "mock":
+    # Heuristic path: always for mock, or when the LLM clarity check is disabled.
+    if settings.llm_provider == "mock" or not use_llm:
         amb = _heuristic_score(statement)
         feedback = "looks clear" if amb <= threshold else "missing a clear instruction or qualifier"
+        mode = "heuristic"
+        if amb <= threshold:
+            return CheckResult.ok(feedback, ambiguity_score=amb, mode=mode)
+        return CheckResult.fail(FailureCode.SEMANTIC_AMBIGUITY, feedback, ambiguity_score=amb, mode=mode)
     else:
         prompt = (
             "Rate the ambiguity of this math/physics problem statement for a "
@@ -49,7 +54,12 @@ def verify(statement: str, provider: LLMProvider) -> CheckResult:
             'JSON: {"ambiguity": <float>, "feedback": "<short note>"}.\n\n'
             f"Statement: {statement}"
         )
-        raw = provider.complete(prompt)
+        try:
+            raw = provider.complete(prompt)
+        except Exception as exc:  # noqa: BLE001 - network/timeout on this advisory call:
+            # don't hang or force regeneration; skip the clarity check for this candidate.
+            return CheckResult.ok(f"semantic check skipped ({type(exc).__name__})",
+                                  ambiguity_score=0.0, mode="skipped")
         try:
             parsed = json.loads(raw[raw.find("{"): raw.rfind("}") + 1])
             amb = float(parsed.get("ambiguity", 1.0))
@@ -58,9 +68,10 @@ def verify(statement: str, provider: LLMProvider) -> CheckResult:
             amb, feedback = 1.0, "semantic check returned unparseable output"
 
     if amb <= threshold:
-        return CheckResult.ok(feedback, ambiguity_score=amb)
+        return CheckResult.ok(feedback, ambiguity_score=amb, mode="llm")
     return CheckResult.fail(
         FailureCode.SEMANTIC_AMBIGUITY,
         feedback,
         ambiguity_score=amb,
+        mode="llm",
     )

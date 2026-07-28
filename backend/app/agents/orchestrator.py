@@ -102,6 +102,7 @@ def generate_next_problem(
     difficulty_override: Optional[int] = None,
     session_id: Optional[str] = None,
     log_prompt: bool = False,
+    use_llm_semantic: bool = True,
 ) -> GenerationResult:
     _session_ctx.set(session_id)
     # 1-2. Observe + student model (the skill vector is maintained on the Student).
@@ -193,10 +194,19 @@ def generate_next_problem(
               "task": candidate.task.model_dump()})
 
         # Verification phase (SymPy / physics templates / clarity) -- also timed.
-        _log(session, student.id, "verify_start", {"attempt": attempt, "statement": candidate.statement})
+        # Each sub-check is logged as it completes so a slow step (usually the
+        # semantic LLM call) is visible in the log rather than a silent gap.
+        _log(session, student.id, "verify_start",
+             {"attempt": attempt, "statement": candidate.statement, "use_llm_semantic": use_llm_semantic})
         _emit(progress, status="verifying", attempt=attempt, statement=candidate.statement)
+
+        def _on_verify_step(name: str, data: dict, _a: int = attempt) -> None:
+            _log(session, student.id, "verify_step", {"attempt": _a, "step": name, **data})
+            _emit(progress, status="verifying", attempt=_a, step=name)
+
         t_ver = time.monotonic()
-        report = engine.verify(candidate, provider)
+        report = engine.verify(candidate, provider, use_llm_semantic=use_llm_semantic,
+                               on_step=_on_verify_step)
         verify_ms = int((time.monotonic() - t_ver) * 1000)
         last_report = report
         if report.accepted:

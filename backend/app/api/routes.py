@@ -167,7 +167,8 @@ def _resolve_skill(skill: Optional[str]) -> Optional[str]:
 def _problem_stream(student_id: str, provider_override: Optional[str],
                     skill_override: Optional[str], difficulty: Optional[int],
                     session_id: Optional[str] = None,
-                    log_prompt: bool = False) -> StreamingResponse:
+                    log_prompt: bool = False,
+                    semantic_llm: Optional[bool] = None) -> StreamingResponse:
     """SSE: run the LLM generate->verify->regenerate loop in a worker thread and
     stream each step (plan, generating, rejected, accepted) to the browser."""
     with Session(engine) as check:
@@ -183,14 +184,15 @@ def _problem_stream(student_id: str, provider_override: Optional[str],
             def progress(ev: dict) -> None:
                 q.put({"type": "progress", **{k: ev.get(k) for k in
                        ("status", "attempt", "skill", "difficulty_target",
-                        "statement", "answer", "details", "failures", "feedback")}})
+                        "statement", "answer", "details", "failures", "feedback", "step")}})
 
+            use_sem = settings.semantic_llm_check if semantic_llm is None else semantic_llm
             try:
                 result = orchestrator.generate_next_problem(
                     student, get_provider(provider_override), session=session,
                     max_regenerations=settings.max_regenerations, progress=progress,
                     skill_override=skill_override, difficulty_override=difficulty,
-                    session_id=session_id, log_prompt=log_prompt,
+                    session_id=session_id, log_prompt=log_prompt, use_llm_semantic=use_sem,
                 )
                 q.put({"type": "result", "accepted": result.accepted,
                        "regen_count": result.regen_count,
@@ -224,10 +226,11 @@ def next_problem_stream(
     difficulty: Optional[int] = Query(None, ge=1, le=5),
     session_id: Optional[str] = Query(None),  # EventSource can't set headers
     log_prompt: bool = Query(False),
+    semantic_llm: Optional[bool] = Query(None),
 ):
     provider_override = None if provider in (None, "", "auto", "default") else provider
     return _problem_stream(student_id, provider_override, _resolve_skill(skill), difficulty,
-                           session_id, log_prompt)
+                           session_id, log_prompt, semantic_llm)
 
 
 # ---------- attempts (observe -> assessor -> save state) ----------
@@ -430,6 +433,7 @@ def session_next_problem_stream(
     difficulty: Optional[int] = Query(None, ge=1, le=5),
     sid: Optional[str] = Query(None),  # login-session id (EventSource can't set headers)
     log_prompt: bool = Query(False),
+    semantic_llm: Optional[bool] = Query(None),
     session: Session = Depends(get_session),
 ):
     """Stream the LLM loop with the session's model.
@@ -441,7 +445,7 @@ def session_next_problem_stream(
     if not student:
         raise HTTPException(404, "session not found")
     return _problem_stream(session_id, student.current_model or None, _resolve_skill(skill),
-                           difficulty, sid, log_prompt)
+                           difficulty, sid, log_prompt, semantic_llm)
 
 
 @router.post("/sessions/{session_id}/attempts")
