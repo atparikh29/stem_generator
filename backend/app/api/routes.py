@@ -320,21 +320,29 @@ def student_stats(student_id: str, session: Session = Depends(get_session)):
         .order_by(ProblemRecord.id)
     ).all()
 
-    # Time spent ≈ sum over login sessions of (last event − first event).
+    # Time spent ≈ sum of gaps between consecutive events within a session, with
+    # each gap capped (settings.active_gap_cap_seconds) so idle time — a tab left
+    # open, or a gap across an app restart — doesn't inflate the total.
     per_session_ts: dict[str, list] = defaultdict(list)
     for e in events:
         if e.session_id and e.ts:
             per_session_ts[e.session_id].append(e.ts)
 
-    def _span_seconds(ts_list: list) -> float:
-        if len(ts_list) < 2:
-            return 0.0
-        try:
-            return max(0.0, (max(ts_list) - min(ts_list)).total_seconds())
-        except Exception:  # noqa: BLE001
-            return 0.0
+    cap = settings.active_gap_cap_seconds
 
-    total_time = int(sum(_span_seconds(v) for v in per_session_ts.values()))
+    def _active_seconds(ts_list: list) -> float:
+        ordered = sorted(ts_list)
+        total = 0.0
+        for a, b in zip(ordered, ordered[1:]):
+            try:
+                gap = (b - a).total_seconds()
+            except Exception:  # noqa: BLE001
+                continue
+            if gap > 0:
+                total += min(gap, cap)  # cap idle gaps
+        return total
+
+    total_time = int(sum(_active_seconds(v) for v in per_session_ts.values()))
     attempts = [e for e in events if e.type == "attempt"]
     correct = sum(1 for e in attempts if (e.payload or {}).get("correct"))
 

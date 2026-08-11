@@ -68,6 +68,9 @@ provider is never paced.
 | `INITIAL_MASTERY` | `0.2` | cold-start mastery prior per skill |
 | `MISCONCEPTION_THRESHOLD` | `0.25` | mastery below this is flagged as a gap |
 
+### Progress dashboard
+| `ACTIVE_GAP_CAP_SECONDS` | `300` | "time spent" caps each between-event gap at this many seconds so idle time (a tab left open) doesn't inflate the total |
+
 ### Difficulty anchors (advanced, JSON-valued env)
 Difficulty is binned 1..5 relative to a per-skill `(lo, hi)` raw-score range.
 Override with a JSON string, e.g.

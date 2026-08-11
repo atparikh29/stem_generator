@@ -66,6 +66,11 @@ class Settings(BaseSettings):
     # for the formal experiment); 1 is more forgiving for demos / weaker models.
     difficulty_tolerance: int = 0
 
+    # Progress dashboard: "time spent" sums the gaps between consecutive events
+    # in a session, but caps each gap so idle time (a tab left open) doesn't
+    # inflate the total. A gap longer than this counts as this many seconds.
+    active_gap_cap_seconds: int = 300  # 5 minutes
+
     # Assessor (student model) tuning.
     assessor_alpha: float = 0.4           # EMA weight on the newest observation
     initial_mastery: float = 0.2          # cold-start mastery prior per skill
