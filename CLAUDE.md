@@ -45,6 +45,7 @@ backend/app/
   api/            FastAPI routes (sessions, pre-stored, SSE stream, attempts)
   scripts/        build_problem_bank.py (seed + --augment), smoke_llm, list_skills
   models.py       immutable Event log + Student (=session, holds saved state) + ProblemRecord
+  ratelimit.py    inbound HTTP caps + outbound LLM pacing (both directions)
 backend/tests/    pytest; runs fully offline on the mock provider
 frontend/         Next.js (App Router) practice UI
 docs/             architecture + experiment notes
@@ -96,6 +97,31 @@ these; metrics and the event log depend on this closed set.
   suite green with no network/keys. New features need a mock path.
 - **Schemas are the contract.** Generator output that fails Pydantic validation
   is `json_invalid` by definition — don't "rescue" malformed JSON in the loop.
+
+## Rate limiting (both directions)
+
+`app/ratelimit.py` guards two separate resources with one token-bucket
+mechanism. Tuning knobs are in `CONFIG.md`; the defaults are sized for a demo.
+
+- **Inbound** — `main.py` attaches `limit("default")` to every `/api` route.
+  Expensive or sensitive routes add a second, tighter class of their own
+  (`AUTH_LIMIT`, `GENERATE_LIMIT` in `api/routes.py`), so a call spends a token
+  from both. **A new route inherits the default automatically**; give it a
+  tighter class only if it costs real money or guards credentials. Declared as
+  route `dependencies=[...]`, never as endpoint parameters, so signatures stay
+  clean and tests that call endpoint functions directly are unaffected.
+- **Outbound** — `get_provider()` wraps every *real* provider in
+  `ThrottledProvider`, so vendor calls are paced per provider. This matters
+  because the inbound cap counts *requests*, while one request can make up to
+  `2 * (max_regenerations + 1)` vendor calls. `mock` is returned unwrapped: the
+  offline pipeline and the test suite must stay instant.
+
+Two behaviors worth preserving:
+
+- `LLMRateLimitError` is deliberately **not** a `ValueError`. The orchestrator
+  reads `ValueError` as `json_invalid` and would spend a regeneration on it.
+- The semantic clarity check is advisory, so being throttled there is *skipped*
+  (`mode="skipped"`), never turned into a `semantic_ambiguity` rejection.
 
 ## Adding a skill (typical change)
 

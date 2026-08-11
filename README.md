@@ -70,6 +70,18 @@ OPENAI_MODEL=gpt-5.2
 
 …then `pip install openai` (or `anthropic`) and restart the server.
 
+## Rate limits
+
+Both directions are capped, on by default. Inbound, each client gets 120
+requests/min across the API, tightened to 10/min on `/auth/*` and 12/min on the
+generation loop; going over returns `429` with a `Retry-After`. Outbound, calls
+to each LLM vendor are paced at 30/min with at most 4 in flight — one API
+request can trigger a dozen vendor calls, so the inbound cap alone doesn't bound
+spend. The `mock` provider is never paced, so offline runs are unaffected.
+
+Every number is an env var (`RATE_LIMIT_*`, `LLM_RATE_LIMIT_*`); see
+[CONFIG.md](CONFIG.md). `RATE_LIMIT_ENABLED=false` turns the whole thing off.
+
 ## Running the reliability experiment
 
 ```bash

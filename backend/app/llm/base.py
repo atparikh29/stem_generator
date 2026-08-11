@@ -43,7 +43,13 @@ class LLMProvider(Protocol):
 
 def get_provider(override: str | None = None) -> LLMProvider:
     """Return the LLM provider. `override` (mock|openai|anthropic|gemini) lets a
-    request pick a model regardless of the .env default."""
+    request pick a model regardless of the .env default.
+
+    Real providers come back wrapped in a rate limiter, because one request can
+    fire up to `2 * (max_regenerations + 1)` vendor calls -- the inbound HTTP cap
+    doesn't bound that. `mock` is returned bare so the offline pipeline and the
+    test suite run at full speed.
+    """
     provider = (override or settings.llm_provider).lower()
     if provider == "mock":
         from .mock import MockProvider
@@ -52,13 +58,19 @@ def get_provider(override: str | None = None) -> LLMProvider:
     if provider == "openai":
         from .openai_provider import OpenAIProvider
 
-        return OpenAIProvider()
+        return _throttled(OpenAIProvider())
     if provider == "anthropic":
         from .anthropic_provider import AnthropicProvider
 
-        return AnthropicProvider()
+        return _throttled(AnthropicProvider())
     if provider == "gemini":
         from .gemini_provider import GeminiProvider
 
-        return GeminiProvider()
+        return _throttled(GeminiProvider())
     raise ValueError(f"unknown LLM_PROVIDER: {settings.llm_provider}")
+
+
+def _throttled(provider: LLMProvider) -> LLMProvider:
+    from ..ratelimit import ThrottledProvider
+
+    return ThrottledProvider(provider)

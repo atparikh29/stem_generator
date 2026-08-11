@@ -11,8 +11,20 @@ async function req(path: string, opts: RequestInit = {}) {
   const s = sid();
   if (s) headers["X-Session-Id"] = s;
   const res = await fetch(`${BASE}${path}`, { ...opts, headers: { ...headers, ...(opts.headers as any) } });
+  if (res.status === 429) {
+    // The backend caps requests per client, tighter on auth and on the LLM loop.
+    // Callers show e.message directly, so make it a sentence rather than a JSON dump.
+    const wait = Number(res.headers.get("Retry-After") || 0);
+    throw new Error(`429: Too many requests. Try again in ${wait > 0 ? `${wait}s` : "a moment"}.`);
+  }
   if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
   return res.json();
+}
+
+/** The user-facing sentence from a 429, or null if the error was something else. */
+export function rateLimitNotice(e: unknown): string | null {
+  const msg = String((e as any)?.message ?? "");
+  return msg.startsWith("429:") ? msg.slice(4).trim() : null;
 }
 
 export interface Problem {
