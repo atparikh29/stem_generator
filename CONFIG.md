@@ -25,6 +25,35 @@ Env vars are UPPER_SNAKE_CASE of the field name (e.g. `MAX_REGENERATIONS`).
 | `LLM_TIMEOUT_SECONDS` | `60` | per-call network timeout; bounds a stalled/rate-limited provider call so it can't hang the loop |
 | `LLM_MAX_RETRIES` | `2` | retry budget for a single LLM HTTP call |
 
+### Rate limiting
+Two directions, one master switch. See "Rate limiting" in `CLAUDE.md` for how
+they fit together; `backend/app/ratelimit.py` is the implementation.
+
+**Inbound** — requests per minute from one client. `DEFAULT` is applied to every
+`/api` route; `AUTH` and `GENERATE` apply *in addition* on their own routes, so a
+login spends a token from both. Over the limit returns **429** with `Retry-After`.
+`/health` is exempt.
+
+| `RATE_LIMIT_ENABLED` | `true` | master switch for both directions |
+| `RATE_LIMIT_DEFAULT_PER_MINUTE` | `120` | every `/api` route (the debug panel alone polls ~20/min) |
+| `RATE_LIMIT_AUTH_PER_MINUTE` | `10` | `/auth/*` — throttles credential guessing |
+| `RATE_LIMIT_GENERATE_PER_MINUTE` | `12` | the LLM generate→verify loop |
+| `RATE_LIMIT_TRUST_FORWARDED_FOR` | `false` | identify clients by `X-Forwarded-For`; only enable behind a proxy you control, since the header is client-supplied |
+
+**Outbound** — how fast the backend may call each LLM vendor. One request can
+make up to `2 × (MAX_REGENERATIONS + 1)` vendor calls, so the inbound caps don't
+bound this. Calls wait for a slot rather than failing immediately; the `mock`
+provider is never paced.
+
+| `LLM_RATE_LIMIT_PER_MINUTE` | `30` | per provider (openai/anthropic/gemini keep separate budgets) |
+| `LLM_MAX_CONCURRENT_CALLS` | `4` | in-flight vendor calls; each SSE generation runs in its own thread |
+| `LLM_RATE_LIMIT_WAIT_SECONDS` | `10` | how long a call waits for a slot before giving up |
+
+> Buckets are **per process, in memory** — right for the single uvicorn worker
+> this project runs. Under multiple workers or replicas each gets its own
+> buckets and the effective limit multiplies; that needs a shared store (Redis)
+> behind `RateLimiter`.
+
 ### Database
 | `DATABASE_URL` | `sqlite:///./stemgen.db` | SQLite (default) or `postgresql+psycopg://…` |
 

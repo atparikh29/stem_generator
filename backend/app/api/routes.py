@@ -23,8 +23,16 @@ from ..content.skills import SKILLS, all_skills
 from ..db import engine, get_session
 from ..llm.base import get_provider
 from ..models import Event, ProblemRecord, Student
+from ..ratelimit import limit
 
 router = APIRouter()
+
+# Route-class rate limits, applied on top of the default cap that main.py puts on
+# every /api route. `auth` throttles credential guessing; `generate` protects the
+# LLM loop, which is slow and costs real money per call. Declared as route
+# dependencies so endpoint signatures stay clean.
+AUTH_LIMIT = [Depends(limit("auth"))]
+GENERATE_LIMIT = [Depends(limit("generate"))]
 
 
 # ---------- request/response bodies ----------
@@ -136,7 +144,7 @@ def submit_diagnostic(student_id: str, body: DiagnosticBody, session: Session = 
 
 # ---------- problem generation (the agent loop) ----------
 
-@router.post("/students/{student_id}/next-problem")
+@router.post("/students/{student_id}/next-problem", dependencies=GENERATE_LIMIT)
 def next_problem(student_id: str, session: Session = Depends(get_session)):
     student = session.get(Student, student_id)
     if not student:
@@ -232,7 +240,7 @@ def _problem_stream(student_id: str, provider_override: Optional[str],
     )
 
 
-@router.get("/students/{student_id}/next-problem/stream")
+@router.get("/students/{student_id}/next-problem/stream", dependencies=GENERATE_LIMIT)
 def next_problem_stream(
     student_id: str,
     provider: Optional[str] = Query(None),
@@ -401,7 +409,7 @@ def list_events(student_id: str, limit: int = 500, session_id: Optional[str] = Q
 
 # ---------- auth (username / password) ----------
 
-@router.post("/auth/register")
+@router.post("/auth/register", dependencies=AUTH_LIMIT)
 def register(body: RegisterBody, session: Session = Depends(get_session)):
     """Create an account + its session. Password is stored only as a PBKDF2 hash."""
     username = body.username.strip()
@@ -430,7 +438,7 @@ def register(body: RegisterBody, session: Session = Depends(get_session)):
     return {**jsonable_encoder(student), "session_id": sid}
 
 
-@router.post("/auth/login")
+@router.post("/auth/login", dependencies=AUTH_LIMIT)
 def login(body: LoginBody, session: Session = Depends(get_session)):
     """Verify credentials, start a new session, and return it (to resume saved state)."""
     student = session.exec(select(Student).where(Student.username == body.username.strip())).first()
@@ -442,7 +450,7 @@ def login(body: LoginBody, session: Session = Depends(get_session)):
     return {**jsonable_encoder(student), "session_id": sid}
 
 
-@router.post("/auth/forgot-password")
+@router.post("/auth/forgot-password", dependencies=AUTH_LIMIT)
 def forgot_password(body: ForgotBody, session: Session = Depends(get_session)):
     """Issue a short-lived reset token.
 
@@ -469,7 +477,7 @@ def forgot_password(body: ForgotBody, session: Session = Depends(get_session)):
     return resp
 
 
-@router.post("/auth/reset-password")
+@router.post("/auth/reset-password", dependencies=AUTH_LIMIT)
 def reset_password(body: ResetBody, session: Session = Depends(get_session)):
     """Consume a valid, unexpired reset token and set a new password.
 
@@ -594,7 +602,7 @@ def fetch_pre_stored(
             "regen_count": result.regen_count, "source": "pre_stored"}
 
 
-@router.get("/sessions/{session_id}/next-problem/stream")
+@router.get("/sessions/{session_id}/next-problem/stream", dependencies=GENERATE_LIMIT)
 def session_next_problem_stream(
     session_id: str,
     skill: Optional[str] = Query(None),

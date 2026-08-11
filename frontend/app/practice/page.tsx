@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { api, Problem, SID_KEY } from "../../lib/api";
+import { api, Problem, rateLimitNotice, SID_KEY } from "../../lib/api";
 
 const SESSION_KEY = "stemgen.sessionId";
 const USER_KEY = "stemgen.username";
@@ -57,6 +57,9 @@ export default function Practice() {
   const [regen, setRegen] = useState<number | null>(null);
   const [source, setSource] = useState<"pre_stored" | "llm" | null>(null);
   const [requestedDiff, setRequestedDiff] = useState<number | null>(null);
+  // Why a generation didn't arrive (rate limit, provider error). Distinct from
+  // `feedback`, which only renders alongside a problem.
+  const [genError, setGenError] = useState<string | null>(null);
 
   // auth
   const [username, setUsername] = useState("");
@@ -177,6 +180,7 @@ export default function Practice() {
     setAnswer("");
     setFeedback(null);
     setRegen(null);
+    setGenError(null);
   }
 
   // ---- register: create account + session -> instant pre-stored problem ----
@@ -189,7 +193,8 @@ export default function Practice() {
       setPassword("");
       await fetchPreStored(s.id);
     } catch (e: any) {
-      setAuthError(String(e.message).includes("409") ? "That username is taken." : "Registration failed.");
+      setAuthError(rateLimitNotice(e) ??
+        (String(e.message).includes("409") ? "That username is taken." : "Registration failed."));
       setBusy(false);
     }
   }
@@ -205,7 +210,7 @@ export default function Practice() {
       api.logUi(s.id, "ui_login"); // s.id known now; header sid set by applySavedState
       setView("welcome");
     } catch (e: any) {
-      setAuthError("Invalid username or password.");
+      setAuthError(rateLimitNotice(e) ?? "Invalid username or password.");
     } finally {
       setBusy(false);
     }
@@ -226,8 +231,8 @@ export default function Practice() {
         setResetInfo(res.message || "If that account exists, a reset token has been issued.");
       }
       setAuthMode("reset");
-    } catch {
-      setAuthError("Could not request a reset. Try again.");
+    } catch (e: any) {
+      setAuthError(rateLimitNotice(e) ?? "Could not request a reset. Try again.");
     } finally {
       setBusy(false);
     }
@@ -247,7 +252,8 @@ export default function Practice() {
       api.logUi(s.id, "password_reset");
       setView("welcome");
     } catch (e: any) {
-      setAuthError(String(e.message).includes("400") ? "Invalid or expired reset token." : "Reset failed.");
+      setAuthError(rateLimitNotice(e) ??
+        (String(e.message).includes("400") ? "Invalid or expired reset token." : "Reset failed."));
     } finally {
       setBusy(false);
     }
@@ -302,6 +308,9 @@ export default function Practice() {
       const res = await api.preStored(id, { skill, difficulty, context: ctx });
       if (res.accepted) setProblem(res.problem as Problem);
       setRegen(0);
+    } catch (e: any) {
+      // Without this, "Next problem" (which doesn't await) failed silently.
+      setGenError(rateLimitNotice(e) ?? "Couldn't fetch a problem. Try again.");
     } finally {
       setBusy(false);
     }
@@ -324,20 +333,34 @@ export default function Practice() {
     setView("practice");
     setBusy(true);
     const es = new EventSource(api.sessionStreamUrl(sessionId, { ...opts, logPrompt, semanticLlm }));
+    let settled = false; // did the stream reach a verdict of its own?
     es.onmessage = (e) => {
       const ev = JSON.parse(e.data);
       if (ev.type === "progress") setAttempts((a) => [...a, ev as Attempt]);
       else if (ev.type === "result") {
+        settled = true;
         if (ev.accepted) setProblem(ev.problem as Problem);
         setRegen(ev.regen_count);
         setBusy(false);
         es.close();
       } else if (ev.type === "error") {
+        // Loop failed mid-flight, e.g. the model provider throttled us.
+        settled = true;
+        setGenError(ev.message || "Generation failed. Try again.");
         setBusy(false);
         es.close();
       }
     };
     es.onerror = () => {
+      // EventSource never exposes the HTTP status, so a refused connection and a
+      // dropped one look identical here. Being refused outright is by far the
+      // likelier cause when nothing at all arrived.
+      if (!settled) {
+        setGenError(
+          "Couldn't start generating — the request was refused, most likely because " +
+          "too many were sent in a short window. Wait a moment and try again."
+        );
+      }
       setBusy(false);
       es.close();
     };
@@ -701,6 +724,13 @@ export default function Practice() {
               {" "}Turn on <b>Debug</b> (top-right) to watch every attempt, its timing, and its rejection reason.
             </p>
           )}
+        </section>
+      )}
+
+      {genError && !problem && (
+        <section style={{ background: "#fef2f2", border: "1px solid #fecaca", padding: 14,
+          borderRadius: 10, marginBottom: 16 }}>
+          <p style={{ margin: 0, color: "#991b1b" }}>{genError}</p>
         </section>
       )}
 

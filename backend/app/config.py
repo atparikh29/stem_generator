@@ -30,6 +30,30 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 60.0
     llm_max_retries: int = 2
 
+    # ----- Rate limiting -----
+    # Master switch for both directions (inbound HTTP and outbound provider calls).
+    rate_limit_enabled: bool = True
+
+    # Inbound: requests per minute allowed from one client, per route class.
+    # `default` covers every /api route; the others additionally apply to their
+    # own routes. Buckets are per client IP and per class, so chatty telemetry
+    # can't eat the budget for an expensive generation.
+    rate_limit_default_per_minute: int = 120
+    rate_limit_auth_per_minute: int = 10      # login/register/forgot/reset (brute force)
+    rate_limit_generate_per_minute: int = 12  # the LLM generate->verify loop
+
+    # Identify clients by X-Forwarded-For instead of the socket peer. Only enable
+    # behind a proxy you control: the header is client-supplied and otherwise
+    # lets anyone mint a fresh bucket per request.
+    rate_limit_trust_forwarded_for: bool = False
+
+    # Outbound: how fast we may call a real LLM vendor, per provider. Keeps the
+    # regeneration loop inside provider quotas. The mock provider is never paced.
+    llm_rate_limit_per_minute: int = 30
+    llm_max_concurrent_calls: int = 4
+    # How long an outbound call may wait for a slot before giving up.
+    llm_rate_limit_wait_seconds: float = 10.0
+
     # Verifier configuration
     semantic_ambiguity_threshold: float = 0.5
     max_regenerations: int = 5
