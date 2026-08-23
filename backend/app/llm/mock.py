@@ -60,11 +60,15 @@ def _build_math(skill: str, k: int):
                      f"Evaluate the definite integral of {f} from 0 to {b}.",
                      f"By the FTC, the integral equals {val}.", interval=[0.0, float(b)])
     if skill == "optimization":
-        r = _R.randint(1, 9)  # critical point of f(x)=x^2-2r x  ->  f'(x)=2x-2r=0
-        return _math("solve_equation", f"2*x - {2*r} = 0", str(r),
-                     f"A function has derivative f'(x) = 2x - {2*r}. Find the critical "
+        # Critical point of a higher-degree f: f'(x) = a*x^p - a*r^p = 0. An ODD
+        # power p keeps the real root unique (x = r); p scales difficulty.
+        p = 1 if k == 1 else 3 if k <= 3 else 5
+        r, a = _R.randint(1, 4), _R.randint(1, 3)
+        lhs = f"{a}*x - {a*r}" if p == 1 else f"{a}*x**{p} - {a * r**p}"
+        return _math("solve_equation", f"{lhs} = 0", str(r),
+                     f"A function has derivative f'(x) = {lhs}. Find the critical "
                      f"point where f'(x) = 0.",
-                     f"Solve 2x - {2*r} = 0 to get x = {r}.")
+                     f"Solve {lhs} = 0 to get x = {r}.")
     if skill == "trig_equations":
         # Domain-restricted to [0, pi/2] for a unique solution.
         rhs, sol = _R.choice([("1/2", "pi/6"), ("sqrt(2)/2", "pi/4"), ("sqrt(3)/2", "pi/3")])
@@ -72,10 +76,17 @@ def _build_math(skill: str, k: int):
                      f"Solve sin(x) = {rhs} for x on the interval [0, pi/2].",
                      f"x = {sol}.", interval=[0.0, float(sp.pi / 2)])
     if skill == "exp_log_equations":
-        c = _R.randint(2, 9)
-        return _math("solve_equation", f"exp(x) = {c}", f"log({c})",
-                     f"Solve e^x = {c} for x. Express the answer exactly.",
-                     f"x = ln({c}).")
+        # a*exp(b*x) + d = C  ->  exp(b*x) = m  ->  x = ln(m)/b. The coefficient,
+        # inner rate b, and offset d switch on with k so difficulty scales.
+        a = 1 if k == 1 else _R.randint(2, 4)
+        b = 1 if k <= 2 else 2
+        d = 0 if k <= 3 else _R.randint(2, 6)
+        m = _R.randint(2, 9)
+        C = a * m + d
+        expr = f"{a}*exp({b}*x) + {d} = {C}" if d else f"{a}*exp({b}*x) = {a*m}"
+        ans = f"log({m})/{b}" if b > 1 else f"log({m})"
+        return _math("solve_equation", expr, ans,
+                     f"Solve {expr} for x. Express the answer exactly.", f"x = {ans}.")
     if skill == "trig_identities":
         # (sin^2 + cos^2)^k + c  -> simplifies to 1 + c; higher k scales difficulty.
         c = _R.randint(0, 5)
