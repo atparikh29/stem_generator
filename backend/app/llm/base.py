@@ -42,8 +42,8 @@ class LLMProvider(Protocol):
 
 
 def get_provider(override: str | None = None) -> LLMProvider:
-    """Return the LLM provider. `override` (mock|openai|anthropic|gemini) lets a
-    request pick a model regardless of the .env default.
+    """Return the LLM provider. `override` (mock|openai|anthropic|gemini|deepseek)
+    lets a request pick a model regardless of the .env default.
 
     Real providers come back wrapped in a rate limiter, because one request can
     fire up to `2 * (max_regenerations + 1)` vendor calls -- the inbound HTTP cap
@@ -67,6 +67,10 @@ def get_provider(override: str | None = None) -> LLMProvider:
         from .gemini_provider import GeminiProvider
 
         return _throttled(GeminiProvider())
+    if provider == "deepseek":
+        from .deepseek_provider import DeepSeekProvider
+
+        return _throttled(DeepSeekProvider())
     raise ValueError(f"unknown LLM_PROVIDER: {settings.llm_provider}")
 
 

@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # LLM provider: mock | openai | anthropic
+    # LLM provider: mock | openai | anthropic | gemini | deepseek
     llm_provider: str = "mock"
 
     openai_api_key: str = ""
@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
+
+    # DeepSeek via its OpenAI-compatible endpoint.
+    deepseek_api_key: str = ""
+    deepseek_model: str = "deepseek-chat"
+    deepseek_base_url: str = "https://api.deepseek.com"
 
     database_url: str = "sqlite:///./stemgen.db"
 

@@ -483,6 +483,7 @@ export default function Practice() {
             <option value="openai">Llama (local)</option>
             <option value="anthropic">Claude (needs key)</option>
             <option value="gemini">Gemini (needs key)</option>
+            <option value="deepseek">DeepSeek (needs key)</option>
           </select>
         </label>
         {submitLabel && <button onClick={onSubmit} disabled={busy}>{submitLabel}</button>}

@@ -18,10 +18,11 @@ Env vars are UPPER_SNAKE_CASE of the field name (e.g. `MAX_REGENERATIONS`).
 ### LLM provider
 | Env var | Default | Meaning |
 |---|---|---|
-| `LLM_PROVIDER` | `mock` | `mock` \| `openai` \| `anthropic` \| `gemini` (default when a request doesn't override) |
+| `LLM_PROVIDER` | `mock` | `mock` \| `openai` \| `anthropic` \| `gemini` \| `deepseek` (default when a request doesn't override) |
 | `OPENAI_API_KEY` / `OPENAI_MODEL` / `OPENAI_BASE_URL` | – / `gpt-5.2` / – | OpenAI, or Llama via a compatible base URL (e.g. Ollama `http://localhost:11434/v1`) |
 | `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | – / `claude-opus-4-8` | Claude |
 | `GEMINI_API_KEY` / `GEMINI_MODEL` / `GEMINI_BASE_URL` | – / `gemini-2.5-flash` / Google OpenAI-compat URL | Gemini |
+| `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` / `DEEPSEEK_BASE_URL` | – / `deepseek-chat` / `https://api.deepseek.com` | DeepSeek |
 | `LLM_TIMEOUT_SECONDS` | `60` | per-call network timeout; bounds a stalled/rate-limited provider call so it can't hang the loop |
 | `LLM_MAX_RETRIES` | `2` | retry budget for a single LLM HTTP call |
 
@@ -93,7 +94,7 @@ Override with a JSON string, e.g.
 ## Layer 3 — Per-request overrides (API / UI)
 
 The web UI selectors (and API query params) override the defaults per request:
-- **Model** — `?provider=mock|openai|anthropic|gemini`
+- **Model** — `?provider=mock|openai|anthropic|gemini|deepseek`
 - **Skill** — `?skill=<id>|random|auto`
 - **Difficulty** — `?difficulty=1..5`
 - **Context** — chosen at onboarding / settings
