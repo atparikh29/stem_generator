@@ -41,7 +41,11 @@ _METRIC_COLS = ["first_pass_validity", "post_loop_validity", "mean_regenerations
 
 def run(n_students: int, n_problems: int, outdir: Path) -> list[dict]:
     provider = get_provider()
-    rows = [run_condition(c, n_students, n_problems, provider=provider) for c in CONDITIONS]
+    rows = []
+    for i, c in enumerate(CONDITIONS, 1):
+        print(f"\n=== condition {i}/{len(CONDITIONS)}: {c.label} "
+              f"(verify={c.verify}, planner={c.planner}, context={c.context}) ===", flush=True)
+        rows.append(run_condition(c, n_students, n_problems, provider=provider))
     outdir.mkdir(parents=True, exist_ok=True)
     _write_csv(rows, outdir / "ablation.csv")
     _write_charts(rows, provider.name, outdir)

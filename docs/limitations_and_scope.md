@@ -2,22 +2,30 @@
 
 Pre-empting these in the talk turns "gaps" into deliberate, defensible scoping.
 
-## 1. Physics is a 1D-mechanics proof-of-concept
+## 1. Physics: 1D + 2D + rotational (single-body, single-step)
 
-The AP Physics 1 domain is intentionally scoped to **single-step, one-dimensional
-mechanics**. `content/skills.json` currently ships five deterministic templates:
+The AP Physics 1 domain now ships **ten** deterministic templates:
 
-`kinematics`, `newton_friction`, `work_energy`, `impulse_momentum`, `circular_motion`.
+- 1D mechanics: `kinematics`, `newton_friction`, `work_energy`, `impulse_momentum`,
+  `circular_motion`
+- 2D: `projectile_motion` (range/height/flight-time), `inclined_plane`
+  (force decomposition `a = g(sinθ − μcosθ)`)
+- Rotational: `torque` (`τ = rF sinθ`), `rotational_kinematics` (`ω = ω₀ + αt`),
+  `rotational_dynamics` (`τ = Iα`)
 
-**Not yet covered** (honest future work): 2D vectors, inclined planes, torque and
-rotational dynamics, and multi-body systems. Each is a real extension — one new
-formula template in `verification/physics_verifier.py`, a `skills.json` entry, a
-mock builder, and a test (the "Adding a skill" playbook in `CLAUDE.md`). The
-architecture supports it; it simply hasn't been built.
+Adding the 2D/rotational templates also **fills physics difficulty bins 4 and 5**,
+which the 1D-only set could not reach — physics now spans difficulty 1–5
+domain-wide (d1 kinematics/work/impulse, d2 newton/rotational-kinematics,
+d3 circular/torque, d4 rotational-dynamics/inclined-plane, d5 projectile).
 
-> Framing: "The verification *architecture* is domain-general; we validated it on
-> a tractable 1D-mechanics slice. Extending the template library is additive, not
-> structural."
+**Still future work** (honest): multi-body systems (pulleys, collisions between
+two bodies), rotational energy/angular-momentum conservation, and genuinely
+multi-step problems where a *single* template spans several difficulty bins on its
+own. Each is additive via the "Adding a skill" playbook in `CLAUDE.md`.
+
+> Framing: "The verification *architecture* is domain-general; we demonstrate it
+> across 1D, 2D, and rotational single-body mechanics. Remaining topics are
+> additive template work, not structural changes."
 
 ## 2. The Assessor is an EMA mastery tracer, not BKT/IRT
 

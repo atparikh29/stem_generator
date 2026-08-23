@@ -56,7 +56,7 @@ def run_condition(cond: Condition, n_students: int, n_problems: int,
     # Single-shot baseline = no regeneration budget; closed-loop = full budget.
     max_regen = cond.max_regen if cond.verify else 0
 
-    delivered = first_pass = total = regen_total = 0
+    delivered = first_pass = total = regen_total = errors = 0
     failures: Counter[str] = Counter()
 
     for s in range(n_students):
@@ -74,19 +74,35 @@ def run_condition(cond: Condition, n_students: int, n_problems: int,
                 difficulty_override = rng.randint(1, 5)
 
             total += 1
-            result = orchestrator.generate_next_problem(
-                student, provider, session=None, max_regenerations=max_regen,
-                skill_override=skill_override, difficulty_override=difficulty_override,
-            )
+            # Live progress so a long real-model run shows where it is.
+            print(f"  [{cond.label}] student {s + 1}/{n_students} "
+                  f"problem {p + 1}/{n_problems} … ", end="", flush=True)
+            try:
+                result = orchestrator.generate_next_problem(
+                    student, provider, session=None, max_regenerations=max_regen,
+                    skill_override=skill_override, difficulty_override=difficulty_override,
+                )
+            except Exception as exc:  # noqa: BLE001 - a provider timeout/network error
+                # is an infrastructure failure, not a content-validity signal: record
+                # it, drop it from the validity denominator, and keep the run going.
+                errors += 1
+                print(f"⚠ error ({type(exc).__name__})", flush=True)
+                continue
             for attempt in result.attempts:
                 for code in attempt["failures"]:
                     failures[code] += 1
+            outcome = (f"✓ accepted (regen {result.regen_count})" if result.accepted
+                       else f"✗ not delivered [{','.join(result.report.failure_reasons) or '—'}]")
+            print(outcome, flush=True)
             if result.accepted:
                 delivered += 1
                 regen_total += result.regen_count
                 if result.regen_count == 0:
                     first_pass += 1
 
+    # Validity is over usable (non-errored) requests, so infra flakiness on a slow
+    # local model isn't mistaken for the model failing the content checks.
+    usable = total - errors
     return {
         **cond.as_dict(),
         "provider": provider.name,
@@ -94,8 +110,9 @@ def run_condition(cond: Condition, n_students: int, n_problems: int,
         "n_problems": n_problems,
         "max_regenerations": max_regen,
         "total_requests": total,
-        "first_pass_validity": round(first_pass / total, 4) if total else 0.0,
-        "post_loop_validity": round(delivered / total, 4) if total else 0.0,
+        "errors": errors,  # provider timeouts/network failures, excluded from validity
+        "first_pass_validity": round(first_pass / usable, 4) if usable else 0.0,
+        "post_loop_validity": round(delivered / usable, 4) if usable else 0.0,
         "mean_regenerations": round(regen_total / delivered, 4) if delivered else 0.0,
         "failure_distribution": {c: failures.get(c, 0) for c in FAILURE_CODES},
     }

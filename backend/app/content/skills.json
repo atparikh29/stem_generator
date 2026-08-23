@@ -15,5 +15,11 @@
   "newton_friction":   {"domain": "physics", "method": "physics", "template": "newton_friction"},
   "work_energy":       {"domain": "physics", "method": "physics", "template": "work_energy"},
   "impulse_momentum":  {"domain": "physics", "method": "physics", "template": "impulse_momentum"},
-  "circular_motion":   {"domain": "physics", "method": "physics", "template": "circular_motion"}
+  "circular_motion":   {"domain": "physics", "method": "physics", "template": "circular_motion"},
+
+  "rotational_kinematics": {"domain": "physics", "method": "physics", "template": "rotational_kinematics"},
+  "torque":                {"domain": "physics", "method": "physics", "template": "torque"},
+  "rotational_dynamics":   {"domain": "physics", "method": "physics", "template": "rotational_dynamics"},
+  "inclined_plane":        {"domain": "physics", "method": "physics", "template": "inclined_plane"},
+  "projectile_motion":     {"domain": "physics", "method": "physics", "template": "projectile_motion"}
 }

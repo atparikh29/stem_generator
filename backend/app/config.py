@@ -86,10 +86,16 @@ class Settings(BaseSettings):
     difficulty_phys_anchors: dict[str, tuple[float, float]] = {
         "kinematics": (2.0, 4.5), "newton_friction": (3.5, 6.0), "work_energy": (2.5, 5.0),
         "impulse_momentum": (2.0, 4.5), "circular_motion": (3.5, 6.5),
+        # 2D / rotational templates, tuned to fill the previously-empty bins 4 & 5.
+        "rotational_kinematics": (1.7, 5.7), "torque": (1.2, 5.2),
+        "rotational_dynamics": (1.3, 5.3), "inclined_plane": (1.3, 5.3),
+        "projectile_motion": (1.8, 5.8),
     }
     difficulty_phys_base: dict[str, float] = {
         "kinematics": 1.0, "impulse_momentum": 1.5, "work_energy": 2.0,
         "newton_friction": 2.5, "circular_motion": 3.0,
+        "rotational_kinematics": 1.0, "torque": 1.5, "rotational_dynamics": 3.0,
+        "inclined_plane": 3.0, "projectile_motion": 4.5,
     }
 
 
