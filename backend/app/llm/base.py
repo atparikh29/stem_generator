@@ -42,7 +42,7 @@ class LLMProvider(Protocol):
 
 
 def get_provider(override: str | None = None) -> LLMProvider:
-    """Return the LLM provider. `override` (mock|openai|anthropic|gemini|deepseek)
+    """Return the LLM provider. `override` (mock|openai|anthropic|gemini|deepseek|gemma)
     lets a request pick a model regardless of the .env default.
 
     Real providers come back wrapped in a rate limiter, because one request can
@@ -71,6 +71,10 @@ def get_provider(override: str | None = None) -> LLMProvider:
         from .deepseek_provider import DeepSeekProvider
 
         return _throttled(DeepSeekProvider())
+    if provider == "gemma":
+        from .gemma_provider import GemmaProvider
+
+        return _throttled(GemmaProvider())
     raise ValueError(f"unknown LLM_PROVIDER: {settings.llm_provider}")
 
 

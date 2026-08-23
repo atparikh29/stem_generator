@@ -484,6 +484,7 @@ export default function Practice() {
             <option value="anthropic">Claude (needs key)</option>
             <option value="gemini">Gemini (needs key)</option>
             <option value="deepseek">DeepSeek (needs key)</option>
+            <option value="gemma">Gemma (local)</option>
           </select>
         </label>
         {submitLabel && <button onClick={onSubmit} disabled={busy}>{submitLabel}</button>}

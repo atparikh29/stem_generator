@@ -23,6 +23,7 @@ Env vars are UPPER_SNAKE_CASE of the field name (e.g. `MAX_REGENERATIONS`).
 | `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | – / `claude-opus-4-8` | Claude |
 | `GEMINI_API_KEY` / `GEMINI_MODEL` / `GEMINI_BASE_URL` | – / `gemini-2.5-flash` / Google OpenAI-compat URL | Gemini |
 | `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` / `DEEPSEEK_BASE_URL` | – / `deepseek-chat` / `https://api.deepseek.com` | DeepSeek |
+| `GEMMA_MODEL` / `GEMMA_BASE_URL` | `gemma3` / `http://localhost:11434/v1` | Gemma served locally by Ollama; set `GEMMA_MODEL` to your `ollama list` tag |
 | `LLM_TIMEOUT_SECONDS` | `60` | per-call network timeout; bounds a stalled/rate-limited provider call so it can't hang the loop |
 | `LLM_MAX_RETRIES` | `2` | retry budget for a single LLM HTTP call |
 
@@ -94,7 +95,7 @@ Override with a JSON string, e.g.
 ## Layer 3 — Per-request overrides (API / UI)
 
 The web UI selectors (and API query params) override the defaults per request:
-- **Model** — `?provider=mock|openai|anthropic|gemini|deepseek`
+- **Model** — `?provider=mock|openai|anthropic|gemini|deepseek|gemma`
 - **Skill** — `?skill=<id>|random|auto`
 - **Difficulty** — `?difficulty=1..5`
 - **Context** — chosen at onboarding / settings
