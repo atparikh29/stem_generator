@@ -12,6 +12,7 @@ regenerate-until-valid loop and the six failure codes.
 """
 from __future__ import annotations
 
+import math
 import random
 
 import sympy as sp
@@ -162,6 +163,58 @@ def _build_physics(skill: str, context: dict):
         st = (f"{flavor} of mass {m} kg moves in a circle of radius {r} m at {v} m/s. "
               "Find the centripetal force in newtons.")
         return st, f"F = mv^2/r = {m}({v**2})/{r} = {fc:.2f} N.", task
+    if skill == "rotational_kinematics":
+        w0, al, t = _R.randint(0, 8), _R.randint(1, 5), _R.randint(2, 6)
+        w = w0 + al * t
+        givens = {"omega0": Quantity(value=w0, unit="rad/s"),
+                  "alpha": Quantity(value=al, unit="rad/s**2"), "t": Quantity(value=t, unit="s")}
+        task = PhysicsTask(template="rotational_kinematics", givens=givens, unknown="omega",
+                           expected_answer=Quantity(value=w, unit="rad/s"))
+        st = (f"A wheel spins at {w0} rad/s and angularly accelerates at {al} rad/s^2 for {t} s. "
+              "Find its final angular velocity in rad/s.")
+        return st, f"omega = omega0 + alpha*t = {w0} + {al}({t}) = {w} rad/s.", task
+    if skill == "torque":
+        r, f_ = _R.randint(1, 5), _R.randint(10, 50)
+        theta = _R.choice([math.pi / 6, math.pi / 4, math.pi / 3])
+        tau = r * f_ * math.sin(theta)
+        givens = {"r": Quantity(value=r, unit="m"), "F": Quantity(value=f_, unit="N"),
+                  "theta": Quantity(value=round(theta, 4), unit="rad")}
+        task = PhysicsTask(template="torque", givens=givens, unknown="torque",
+                           expected_answer=Quantity(value=r * f_ * math.sin(round(theta, 4)), unit="N*m"))
+        st = (f"A {f_} N force acts at the end of a {r} m lever arm, at {round(theta,4)} rad to the arm. "
+              "Find the torque in N*m.")
+        return st, f"tau = r*F*sin(theta) = {r}*{f_}*sin({round(theta,4)}) = {tau:.2f} N*m.", task
+    if skill == "rotational_dynamics":
+        inertia, al = _R.randint(2, 10), _R.randint(1, 6)
+        tau = inertia * al
+        givens = {"I": Quantity(value=inertia, unit="kg*m**2"),
+                  "alpha": Quantity(value=al, unit="rad/s**2")}
+        task = PhysicsTask(template="rotational_dynamics", givens=givens, unknown="torque",
+                           expected_answer=Quantity(value=tau, unit="N*m"))
+        st = (f"A rigid body with moment of inertia {inertia} kg*m^2 has angular acceleration "
+              f"{al} rad/s^2. Find the net torque in N*m.")
+        return st, f"tau = I*alpha = {inertia}({al}) = {tau} N*m.", task
+    if skill == "inclined_plane":
+        theta = _R.choice([math.pi / 9, math.pi / 6, math.pi / 5])  # 20/30/36 deg
+        mu = _R.choice([0.1, 0.2, 0.3])
+        theta = round(theta, 4)
+        a = 9.8 * (math.sin(theta) - mu * math.cos(theta))
+        givens = {"theta": Quantity(value=theta, unit="rad"), "mu": Quantity(value=mu, unit="")}
+        task = PhysicsTask(template="inclined_plane", givens=givens, unknown="a",
+                           expected_answer=Quantity(value=a, unit="m/s**2"))
+        st = (f"A block slides down a {theta} rad incline with friction coefficient {mu}. "
+              "Find its acceleration in m/s^2 (g = 9.8 m/s^2).")
+        return st, f"a = g(sin(theta) - mu*cos(theta)) = {a:.2f} m/s^2.", task
+    if skill == "projectile_motion":
+        v0 = _R.randint(10, 40)
+        theta = round(_R.choice([math.pi / 6, math.pi / 4, math.pi / 3]), 4)
+        rng = v0 ** 2 * math.sin(2 * theta) / 9.8
+        givens = {"v0": Quantity(value=v0, unit="m/s"), "theta": Quantity(value=theta, unit="rad")}
+        task = PhysicsTask(template="projectile_motion", givens=givens, unknown="range",
+                           expected_answer=Quantity(value=rng, unit="m"))
+        st = (f"{flavor} is launched at {v0} m/s at {theta} rad above the horizontal. "
+              "Find its horizontal range in meters (g = 9.8 m/s^2).")
+        return st, f"R = v0^2*sin(2*theta)/g = {rng:.2f} m.", task
     raise ValueError(f"no physics builder for skill {skill}")
 
 

@@ -11,6 +11,7 @@ Failures map to FailureCode.UNIT_MISMATCH or FailureCode.MATH_INVALID.
 """
 from __future__ import annotations
 
+import math
 import re
 from typing import Callable
 
@@ -86,12 +87,66 @@ def _circular_motion(givens, unknown):
     raise KeyError(unknown)
 
 
+def _angle(givens, name="theta") -> float:
+    """A 2D/rotational angle given, in radians (stored dimensionless / 'rad')."""
+    return float(givens[name].value)
+
+
+def _torque(givens, unknown):
+    if unknown == "torque":     # tau = r F sin(theta)   (2D)
+        return _q(givens, "r") * _q(givens, "F") * math.sin(_angle(givens))
+    raise KeyError(unknown)
+
+
+def _rotational_kinematics(givens, unknown):
+    if unknown == "omega":      # omega = omega0 + alpha t
+        return _q(givens, "omega0") + _q(givens, "alpha") * _q(givens, "t")
+    if unknown == "alpha":      # alpha = (omega - omega0) / t
+        return (_q(givens, "omega") - _q(givens, "omega0")) / _q(givens, "t")
+    if unknown == "t":          # t = (omega - omega0) / alpha
+        return (_q(givens, "omega") - _q(givens, "omega0")) / _q(givens, "alpha")
+    raise KeyError(unknown)
+
+
+def _rotational_dynamics(givens, unknown):
+    if unknown == "torque":     # tau = I alpha  (Newton's 2nd law for rotation)
+        return _q(givens, "I") * _q(givens, "alpha")
+    if unknown == "alpha":      # alpha = tau / I
+        return _q(givens, "torque") / _q(givens, "I")
+    if unknown == "I":          # I = tau / alpha
+        return _q(givens, "torque") / _q(givens, "alpha")
+    raise KeyError(unknown)
+
+
+def _projectile_motion(givens, unknown):
+    v0, th = _q(givens, "v0"), _angle(givens)   # 2D projectile, launch angle theta
+    if unknown == "range":        # R = v0^2 sin(2 theta) / g
+        return v0 ** 2 * math.sin(2 * th) / G
+    if unknown == "max_height":   # H = v0^2 sin^2(theta) / (2 g)
+        return v0 ** 2 * math.sin(th) ** 2 / (2 * G)
+    if unknown == "flight_time":  # T = 2 v0 sin(theta) / g
+        return 2 * v0 * math.sin(th) / G
+    raise KeyError(unknown)
+
+
+def _inclined_plane(givens, unknown):
+    if unknown == "a":          # a = g (sin theta - mu cos theta)   (2D decomposition)
+        th = _angle(givens)
+        return G * (math.sin(th) - _q(givens, "mu") * math.cos(th))
+    raise KeyError(unknown)
+
+
 _TEMPLATES: dict[str, Callable] = {
     "kinematics": _kinematics,
     "newton_friction": _newton_friction,
     "work_energy": _work_energy,
     "impulse_momentum": _impulse_momentum,
     "circular_motion": _circular_motion,
+    "torque": _torque,
+    "rotational_kinematics": _rotational_kinematics,
+    "rotational_dynamics": _rotational_dynamics,
+    "projectile_motion": _projectile_motion,
+    "inclined_plane": _inclined_plane,
 }
 
 # Crude realism envelopes (magnitude in SI base) to catch absurd parameters.
@@ -145,6 +200,28 @@ _ALIASES: dict[str, dict[str, str]] = {
         "acceleration": "ac", "centripetal_acceleration": "ac", "a": "ac",
         "force": "force", "centripetal_force": "force",
     },
+    "torque": {
+        "radius": "r", "lever_arm": "r", "distance": "r", "force": "F",
+        "angle": "theta", "tau": "torque", "moment": "torque",
+    },
+    "rotational_kinematics": {
+        "initial_angular_velocity": "omega0", "omega_0": "omega0", "w0": "omega0",
+        "angular_velocity": "omega", "final_angular_velocity": "omega", "w": "omega",
+        "angular_acceleration": "alpha", "a": "alpha", "time": "t",
+    },
+    "rotational_dynamics": {
+        "moment_of_inertia": "I", "inertia": "I", "angular_acceleration": "alpha",
+        "a": "alpha", "tau": "torque", "net_torque": "torque", "moment": "torque",
+    },
+    "projectile_motion": {
+        "initial_speed": "v0", "launch_speed": "v0", "speed": "v0", "velocity": "v0",
+        "angle": "theta", "launch_angle": "theta", "horizontal_range": "range",
+        "r": "range", "height": "max_height", "time_of_flight": "flight_time",
+    },
+    "inclined_plane": {
+        "angle": "theta", "incline_angle": "theta", "mu_k": "mu",
+        "friction_coefficient": "mu", "coefficient_of_friction": "mu", "acceleration": "a",
+    },
 }
 
 
@@ -155,6 +232,11 @@ _CANONICAL: dict[str, set[str]] = {
     "work_energy": {"F", "d", "work", "m", "v", "ke"},
     "impulse_momentum": {"F", "t", "impulse", "m", "v", "momentum", "dv"},
     "circular_motion": {"m", "v", "r", "ac", "force"},
+    "torque": {"r", "F", "theta", "torque"},
+    "rotational_kinematics": {"omega0", "omega", "alpha", "t"},
+    "rotational_dynamics": {"I", "alpha", "torque"},
+    "projectile_motion": {"v0", "theta", "range", "max_height", "flight_time"},
+    "inclined_plane": {"theta", "mu", "a"},
 }
 
 

@@ -42,6 +42,12 @@ class PhysicsTask(BaseModel):
         "work_energy",
         "impulse_momentum",
         "circular_motion",
+        # 2D / rotational mechanics
+        "rotational_kinematics",
+        "torque",
+        "rotational_dynamics",
+        "inclined_plane",
+        "projectile_motion",
     ]
     givens: dict[str, Quantity]
     unknown: str
