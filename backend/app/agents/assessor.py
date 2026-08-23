@@ -3,6 +3,12 @@
 Produces a skill vector (mastery in [0, 1] per skill) and misconception tags from
 a short diagnostic and from observed attempt outcomes. Mastery is updated with a
 simple exponential moving average so recent performance dominates.
+
+SCOPE (state this in an oral defense): this is a lightweight EMA *mastery tracer*
+(one exposed parameter, `assessor_alpha`), NOT Bayesian Knowledge Tracing or Item
+Response Theory. It is deliberately simple -- the research contribution is the
+neuro-symbolic verifier, and the assessor only needs to drive skill/difficulty
+selection. Swapping in BKT/IRT is future work; see docs/limitations_and_scope.md.
 """
 from __future__ import annotations
 
