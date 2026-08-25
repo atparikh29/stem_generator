@@ -407,7 +407,6 @@ export default function Practice() {
     if (["verify_start", "verify_step"].includes(type)) return "#a78bfa"; // verify phase — purple
     return "#fbbf24";
   }
-  const sel = { padding: 6, marginLeft: 6 } as const;
   const domains = Array.from(new Set(skills.map((s) => s.domain)));
 
   function fmtDuration(sec: number): string {
@@ -420,13 +419,13 @@ export default function Practice() {
 
   function masteryBar(m: number) {
     const pct = Math.round(m * 100);
-    const color = m >= 0.66 ? "#16a34a" : m >= 0.33 ? "#f59e0b" : "#ef4444";
+    const color = m >= 0.66 ? "var(--ok)" : m >= 0.33 ? "var(--warn)" : "var(--bad)";
     return (
       <div>
-        <div style={{ background: "#e5e7eb", borderRadius: 6, height: 8, width: 100, overflow: "hidden" }}>
-          <div style={{ background: color, width: `${pct}%`, height: "100%" }} />
+        <div className="bar">
+          <i style={{ background: color, width: `${pct}%` }} />
         </div>
-        <span style={{ fontSize: 11, color: "#64748b" }}>{pct}%</span>
+        <span className="meta" style={{ fontSize: 11 }}>{pct}%</span>
       </div>
     );
   }
@@ -434,16 +433,16 @@ export default function Practice() {
   // Sparkline of the difficulty of each delivered problem (chronological), 1..5.
   function difficultyCell(s: SkillStat) {
     const ser = s.difficulty_series || [];
-    if (!ser.length) return <span style={{ color: "#cbd5e1" }}>—</span>;
+    if (!ser.length) return <span className="meta">—</span>;
     return (
       <div>
-        <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 24 }}>
+        <div className="spark">
           {ser.slice(-14).map((d, i) => (
-            <div key={i} title={`difficulty ${d}`} style={{ width: 5, height: `${(d / 5) * 100}%`,
-              background: "#6366f1", borderRadius: 1 }} />
+            <i key={i} title={`difficulty ${d}`}
+              style={{ height: `${(d / 5) * 100}%`, ["--i" as any]: i }} />
           ))}
         </div>
-        <span style={{ fontSize: 11, color: "#64748b" }}>
+        <span className="meta" style={{ fontSize: 11 }}>
           {s.difficulty_first}→{s.difficulty_latest} (min {s.difficulty_min}, max {s.difficulty_max})
         </span>
       </div>
@@ -452,16 +451,14 @@ export default function Practice() {
 
   function settingsForm(submitLabel: string, onSubmit: () => void) {
     return (
-      <section style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center",
-        padding: "12px 14px", background: "#eef2ff", border: "1px solid #c7d2fe",
-        borderRadius: 10, marginBottom: 16 }}>
-        <label>Context
-          <select value={ctx} onChange={(e) => { setCtx(e.target.value); logUi("change_setting", { field: "context", value: e.target.value }); }} style={sel}>
+      <section className="panel panel-accent controls" style={{ marginBottom: 16 }}>
+        <label className="control">Context
+          <select value={ctx} onChange={(e) => { setCtx(e.target.value); logUi("change_setting", { field: "context", value: e.target.value }); }}>
             {contexts.map((c) => <option key={c.id} value={c.id}>{c.id}</option>)}
           </select>
         </label>
-        <label>Skill
-          <select value={skill} onChange={(e) => { setSkill(e.target.value); logUi("change_setting", { field: "skill", value: e.target.value }); }} style={sel}>
+        <label className="control">Skill
+          <select value={skill} onChange={(e) => { setSkill(e.target.value); logUi("change_setting", { field: "skill", value: e.target.value }); }}>
             {domains.map((d) => (
               <optgroup key={d} label={d}>
                 {skills.filter((s) => s.domain === d).map((s) => (
@@ -471,18 +468,18 @@ export default function Practice() {
             ))}
           </select>
         </label>
-        <label>Difficulty
-          <select value={difficulty} onChange={(e) => { setDifficulty(Number(e.target.value)); logUi("change_setting", { field: "difficulty", value: Number(e.target.value) }); }} style={sel}>
+        <label className="control">Difficulty
+          <select value={difficulty} onChange={(e) => { setDifficulty(Number(e.target.value)); logUi("change_setting", { field: "difficulty", value: Number(e.target.value) }); }}>
             {availDiffs.map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
           {availDiffs.length < 5 && (
-            <span style={{ color: "#6b7280", fontSize: 12, marginLeft: 6 }}>
-              (only {availDiffs.join(", ")} available)
+            <span className="meta" style={{ fontSize: 11, fontWeight: 400 }}>
+              only {availDiffs.join(", ")}
             </span>
           )}
         </label>
-        <label>Model
-          <select value={model} onChange={(e) => { setModel(e.target.value); logUi("change_setting", { field: "model", value: e.target.value }); }} style={sel}>
+        <label className="control">Model
+          <select value={model} onChange={(e) => { setModel(e.target.value); logUi("change_setting", { field: "model", value: e.target.value }); }}>
             <option value="mock">Mock (instant)</option>
             <option value="openai">Llama (local)</option>
             <option value="anthropic">Claude (needs key)</option>
@@ -491,7 +488,7 @@ export default function Practice() {
             <option value="gemma">Gemma (local)</option>
           </select>
         </label>
-        {submitLabel && <button onClick={onSubmit} disabled={busy}>{submitLabel}</button>}
+        {submitLabel && <button className="btn-primary" onClick={onSubmit} disabled={busy}>{submitLabel}</button>}
       </section>
     );
   }
@@ -502,181 +499,197 @@ export default function Practice() {
   const candidatesTried = attempts.filter((a) => a.status === "generating").length;
   const verifying = attempts.length > 0 && attempts[attempts.length - 1].status === "verifying";
 
-  const pulseStyle = (
-    <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}} .pulse{display:inline-block;animation:pulse 1s ease-in-out infinite}`}</style>
+  // Three staggered dots — the shared "working" indicator.
+  const dots = (
+    <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+      {[0, 1, 2].map((i) => <i key={i} className="dot" style={{ ["--i" as any]: i }} />)}
+    </span>
   );
 
   // ---------- screens ----------
   let screen: ReactNode = null;
-  if (view === "loading") screen = <main><h1>Practice</h1><p>Loading…</p></main>;
+  if (view === "loading")
+    screen = (
+      <main className="card">
+        <div className="skeleton" style={{ width: "38%", height: 20, marginBottom: 16 }} />
+        <div className="skeleton" style={{ width: "88%", marginBottom: 8 }} />
+        <div className="skeleton" style={{ width: "64%" }} />
+      </main>
+    );
   else if (view === "auth" && authMode === "forgot") {
     screen = (
-      <main>
+      <main className="card animate__animated animate__fadeIn" style={{ maxWidth: 420 }}>
         <h1>Forgot password</h1>
-        <p style={{ maxWidth: 380, color: "#374151" }}>Enter your username to get a reset token.</p>
-        <section style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 320 }}>
-          <label>Username<br />
+        <p className="lede">Enter your username to get a reset token.</p>
+        <section className="form-stack">
+          <label className="field">Username
             <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username"
-              onKeyDown={(e) => e.key === "Enter" && username && doForgot()}
-              style={{ padding: 8, width: "100%" }} />
+              onKeyDown={(e) => e.key === "Enter" && username && doForgot()} />
           </label>
-          {authError && <p style={{ color: "#b91c1c", margin: 0 }}>{authError}</p>}
+          {authError && <p className="panel panel-bad animate__animated animate__headShake" style={{ margin: 0, fontSize: 14 }}>{authError}</p>}
         </section>
-        <button onClick={doForgot} disabled={busy || !username}>{busy ? "…" : "Send reset token →"}</button>{" "}
-        <button onClick={() => { setAuthMode("login"); setAuthError(null); }} style={{ fontSize: 13 }}>
-          Back to log in
-        </button>
+        <div className="btn-row">
+          <button className="btn-primary" onClick={doForgot} disabled={busy || !username}>{busy ? "…" : "Send reset token →"}</button>
+          <button className="btn-ghost btn-sm" onClick={() => { setAuthMode("login"); setAuthError(null); }}>
+            Back to log in
+          </button>
+        </div>
       </main>
     );
   }
   else if (view === "auth" && authMode === "reset") {
     screen = (
-      <main>
+      <main className="card animate__animated animate__fadeIn" style={{ maxWidth: 440 }}>
         <h1>Reset password</h1>
         {resetInfo && (
-          <p style={{ maxWidth: 420, background: "#ecfeff", border: "1px solid #a5f3fc",
-            borderRadius: 8, padding: "8px 10px", color: "#155e75", fontSize: 13 }}>{resetInfo}</p>
+          <p className="panel panel-info" style={{ fontSize: 13 }}>{resetInfo}</p>
         )}
-        <section style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 380 }}>
-          <label>Username<br />
-            <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username"
-              style={{ padding: 8, width: "100%" }} />
+        <section className="form-stack">
+          <label className="field">Username
+            <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
           </label>
-          <label>Reset token<br />
+          <label className="field">Reset token
             <input value={resetToken} onChange={(e) => setResetToken(e.target.value)}
-              style={{ padding: 8, width: "100%", fontFamily: "ui-monospace, Menlo, monospace" }} />
+              style={{ fontFamily: "ui-monospace, Menlo, monospace" }} />
           </label>
-          <label>New password<br />
+          <label className="field">New password
             <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
               autoComplete="new-password"
-              onKeyDown={(e) => e.key === "Enter" && resetToken && newPassword && doReset()}
-              style={{ padding: 8, width: "100%" }} />
+              onKeyDown={(e) => e.key === "Enter" && resetToken && newPassword && doReset()} />
           </label>
-          {authError && <p style={{ color: "#b91c1c", margin: 0 }}>{authError}</p>}
+          {authError && <p className="panel panel-bad animate__animated animate__headShake" style={{ margin: 0, fontSize: 14 }}>{authError}</p>}
         </section>
-        <button onClick={doReset} disabled={busy || !username || !resetToken || !newPassword}>
-          {busy ? "…" : "Reset password & sign in →"}
-        </button>{" "}
-        <button onClick={() => { setAuthMode("login"); setAuthError(null); setResetInfo(null); }} style={{ fontSize: 13 }}>
-          Back to log in
-        </button>
+        <div className="btn-row">
+          <button className="btn-primary" onClick={doReset} disabled={busy || !username || !resetToken || !newPassword}>
+            {busy ? "…" : "Reset password & sign in →"}
+          </button>
+          <button className="btn-ghost btn-sm" onClick={() => { setAuthMode("login"); setAuthError(null); setResetInfo(null); }}>
+            Back to log in
+          </button>
+        </div>
       </main>
     );
   }
   else if (view === "auth") {
     const isReg = authMode === "register";
     screen = (
-      <main>
+      <main className="card animate__animated animate__fadeIn" style={{ maxWidth: isReg ? 640 : 420 }}>
         <h1>{isReg ? "Create account" : "Log in"}</h1>
-        <section style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 320 }}>
-          <label>Username<br />
-            <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username"
-              style={{ padding: 8, width: "100%" }} />
+        <section className="form-stack">
+          <label className="field">Username
+            <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
           </label>
-          <label>Password<br />
+          <label className="field">Password
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
               autoComplete={isReg ? "new-password" : "current-password"}
-              onKeyDown={(e) => e.key === "Enter" && (isReg ? doRegister() : doLogin())}
-              style={{ padding: 8, width: "100%" }} />
+              onKeyDown={(e) => e.key === "Enter" && (isReg ? doRegister() : doLogin())} />
           </label>
-          {authError && <p style={{ color: "#b91c1c", margin: 0 }}>{authError}</p>}
+          {authError && <p className="panel panel-bad animate__animated animate__headShake" style={{ margin: 0, fontSize: 14 }}>{authError}</p>}
         </section>
 
         {isReg && (
           <>
-            <p style={{ marginBottom: 4 }}>Starting settings (your first problem is instant from the verified bank):</p>
+            <p className="meta" style={{ marginBottom: 8 }}>Starting settings — your first problem is instant.</p>
             {settingsForm("", () => {})}
           </>
         )}
 
-        <button onClick={isReg ? doRegister : doLogin} disabled={busy || !username || !password}>
-          {busy ? "…" : isReg ? "Create account & start →" : "Log in →"}
-        </button>{" "}
-        <button onClick={() => { setAuthMode(isReg ? "login" : "register"); setAuthError(null); }} style={{ fontSize: 13 }}>
-          {isReg ? "Have an account? Log in" : "New here? Create an account"}
-        </button>
-        {!isReg && (
-          <>{" "}
-            <button onClick={() => { setAuthMode("forgot"); setAuthError(null); setResetInfo(null); }} style={{ fontSize: 13 }}>
+        <div className="btn-row">
+          <button className="btn-primary" onClick={isReg ? doRegister : doLogin} disabled={busy || !username || !password}>
+            {busy ? "…" : isReg ? "Create account & start →" : "Log in →"}
+          </button>
+          <button className="btn-ghost btn-sm" onClick={() => { setAuthMode(isReg ? "login" : "register"); setAuthError(null); }}>
+            {isReg ? "Have an account? Log in" : "New here? Create an account"}
+          </button>
+          {!isReg && (
+            <button className="btn-ghost btn-sm" onClick={() => { setAuthMode("forgot"); setAuthError(null); setResetInfo(null); }}>
               Forgot password?
             </button>
-          </>
-        )}
+          )}
+        </div>
       </main>
     );
   }
   else if (view === "welcome")
     screen = (
-      <main>
-        <h1>Welcome back{username ? `, ${username}` : ""} 👋</h1>
-        <p>Saved settings: <b>{skill}</b> · difficulty {difficulty} · context {ctx} · model {model}.</p>
-        <p>Change settings before your next problem?</p>
-        <button onClick={() => { logUi("open_settings"); setView("settings"); }}>Yes, change settings</button>{" "}
-        <button onClick={() => { logUi("welcome_continue", { model, skill, difficulty }); nextSameSettings(); }} disabled={busy}>No, continue →</button>
-        <p>
-          <button onClick={openStats} disabled={busy} style={{ fontSize: 13 }}>📊 View my progress</button>{" "}
-          <button onClick={logout} style={{ fontSize: 12 }}>Log out</button>
-        </p>
+      <main className="animate__animated animate__fadeIn">
+        <div className="card">
+          <h1>Welcome back{username ? `, ${username}` : ""} 👋</h1>
+          <div className="tags" style={{ marginTop: 10 }}>
+            <span className="tag tag-accent">{skill}</span>
+            <span className="tag">difficulty {difficulty}</span>
+            <span className="tag">{ctx}</span>
+            <span className="tag">{model}</span>
+          </div>
+          <div className="btn-row" style={{ marginTop: 18 }}>
+            <button className="btn-primary" onClick={() => { logUi("welcome_continue", { model, skill, difficulty }); nextSameSettings(); }} disabled={busy}>No, continue →</button>
+            <button onClick={() => { logUi("open_settings"); setView("settings"); }}>Yes, change settings</button>
+          </div>
+        </div>
+        <div className="btn-row" style={{ marginTop: 14 }}>
+          <button className="btn-ghost btn-sm" onClick={openStats} disabled={busy}>📊 View my progress</button>
+          <button className="btn-ghost btn-sm" onClick={logout}>Log out</button>
+        </div>
       </main>
     );
   else if (view === "settings")
     screen = (
-      <main>
+      <main className="card animate__animated animate__fadeIn">
         <h1>Adjust settings</h1>
         {settingsForm(busy ? "Loading…" : "Apply & get a problem →", applySettings)}
-        <button onClick={() => { logUi("cancel_settings"); setView("practice"); }} disabled={!problem}>Cancel</button>
+        <button className="btn-ghost btn-sm" onClick={() => { logUi("cancel_settings"); setView("practice"); }} disabled={!problem}>Cancel</button>
       </main>
     );
   else if (view === "stats") {
     const active = (stats?.per_skill || []).filter((s) => s.delivered > 0 || s.attempts > 0);
     const untouched = (stats?.per_skill || []).length - active.length;
-    const card = (label: string, value: ReactNode, sub?: string) => (
-      <div style={{ flex: "1 1 120px", background: "#f8fafc", border: "1px solid #e2e8f0",
-        borderRadius: 10, padding: "12px 14px" }}>
-        <div style={{ fontSize: 24, fontWeight: 700 }}>{value}</div>
-        <div style={{ fontSize: 12, color: "#64748b" }}>{label}</div>
-        {sub && <div style={{ fontSize: 11, color: "#94a3b8" }}>{sub}</div>}
+    const card = (label: string, value: ReactNode, sub?: string, i = 0) => (
+      <div className="stat animate__animated animate__fadeInUp"
+        style={{ animationDelay: `${i * 45}ms`, animationDuration: "480ms" }}>
+        <div className="stat-value">{value}</div>
+        <div className="stat-label">{label}</div>
+        {sub && <div className="stat-sub">{sub}</div>}
       </div>
     );
-    const th = { padding: "6px 10px" } as const;
-    const td = { padding: "8px 10px" } as const;
+    const th = {} as const;
+    const td = {} as const;
     screen = (
-      <main>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+      <main className="animate__animated animate__fadeIn">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
           <h1>📊 Progress{username ? ` — ${username}` : ""}</h1>
-          <button onClick={() => setView(problem ? "practice" : "welcome")} style={{ fontSize: 13 }}>← Back</button>
+          <button className="btn-ghost btn-sm" onClick={() => setView(problem ? "practice" : "welcome")}>← Back</button>
         </div>
-        {!stats ? <p>Loading…</p> : (
+        {!stats ? <div className="skeleton" style={{ width: "50%" }} /> : (
           <>
-            <section style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 20 }}>
-              {card("Problems solved", stats.correct, `${stats.total_delivered} served`)}
-              {card("Attempts", stats.total_attempts, `${stats.incorrect} incorrect`)}
-              {card("Accuracy", stats.accuracy != null ? `${Math.round(stats.accuracy * 100)}%` : "—")}
-              {card("Time spent", fmtDuration(stats.total_time_seconds))}
-              {card("Sessions", stats.sessions)}
+            <section className="stat-grid" style={{ marginBottom: 20 }}>
+              {card("Problems solved", stats.correct, `${stats.total_delivered} served`, 0)}
+              {card("Attempts", stats.total_attempts, `${stats.incorrect} incorrect`, 1)}
+              {card("Accuracy", stats.accuracy != null ? `${Math.round(stats.accuracy * 100)}%` : "—", undefined, 2)}
+              {card("Time spent", fmtDuration(stats.total_time_seconds), undefined, 3)}
+              {card("Sessions", stats.sessions, undefined, 4)}
             </section>
 
-            <h2 style={{ fontSize: 18 }}>By skill</h2>
+            <h2>By skill</h2>
             {active.length === 0 ? (
-              <p style={{ color: "#64748b" }}>No problems attempted yet — solve a few and come back!</p>
+              <p className="panel meta">No problems attempted yet — solve a few and come back!</p>
             ) : (
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 14 }}>
+              <div className="card" style={{ padding: 6, overflowX: "auto" }}>
+                <table>
                   <thead>
-                    <tr style={{ textAlign: "left", color: "#64748b", borderBottom: "2px solid #e2e8f0" }}>
+                    <tr>
                       <th style={th}>Skill</th><th style={th}>Solved</th><th style={th}>Correct / Wrong</th>
                       <th style={th}>Accuracy</th><th style={th}>Mastery</th><th style={th}>Difficulty over time</th>
                     </tr>
                   </thead>
                   <tbody>
                     {active.map((s) => (
-                      <tr key={s.skill} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                      <tr key={s.skill}>
                         <td style={td}><b>{s.skill}</b><br />
-                          <span style={{ color: "#94a3b8", fontSize: 12 }}>{s.domain}</span></td>
-                        <td style={td}>{s.correct}<span style={{ color: "#cbd5e1" }}>/{s.delivered}</span></td>
+                          <span className="meta" style={{ fontSize: 12 }}>{s.domain}</span></td>
+                        <td style={td}>{s.correct}<span className="meta">/{s.delivered}</span></td>
                         <td style={td}>
-                          <span style={{ color: "#16a34a" }}>{s.correct}</span>
-                          {" / "}<span style={{ color: "#dc2626" }}>{s.incorrect}</span>
+                          <span style={{ color: "var(--ok)", fontWeight: 600 }}>{s.correct}</span>
+                          {" / "}<span style={{ color: "var(--bad)", fontWeight: 600 }}>{s.incorrect}</span>
                         </td>
                         <td style={td}>{s.accuracy != null ? `${Math.round(s.accuracy * 100)}%` : "—"}</td>
                         <td style={{ ...td, minWidth: 120 }}>{masteryBar(s.mastery)}</td>
@@ -688,14 +701,14 @@ export default function Practice() {
               </div>
             )}
             {untouched > 0 && (
-              <p style={{ color: "#94a3b8", fontSize: 13, marginTop: 10 }}>
+              <p className="meta" style={{ marginTop: 10 }}>
                 + {untouched} skills not yet practiced.
               </p>
             )}
-            <p style={{ marginTop: 20 }}>
-              <button onClick={() => setView(problem ? "practice" : "welcome")}>← Back to practice</button>{" "}
-              <button onClick={openStats} disabled={busy} style={{ fontSize: 13 }}>↻ Refresh</button>
-            </p>
+            <div className="btn-row" style={{ marginTop: 20 }}>
+              <button className="btn-primary" onClick={() => setView(problem ? "practice" : "welcome")}>← Back to practice</button>
+              <button className="btn-ghost btn-sm" onClick={openStats} disabled={busy}>↻ Refresh</button>
+            </div>
           </>
         )}
       </main>
@@ -703,28 +716,29 @@ export default function Practice() {
   }
   else
     screen = (
-    <main>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+    <main className="animate__animated animate__fadeIn">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
         <h1>Practice</h1>
         {username && (
-          <span style={{ fontSize: 13, color: "#6b7280" }}>
-            {username} · <button onClick={logout} style={{ fontSize: 13 }}>Log out</button>
+          <span className="meta" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            {username}
+            <button className="btn-ghost btn-sm" onClick={logout}>Log out</button>
           </span>
         )}
       </div>
-      {pulseStyle}
 
       {busy && !problem && (
-        <section style={{ background: "#f3f4f6", border: "1px solid #e5e7eb", padding: 14,
-          borderRadius: 10, marginBottom: 16 }}>
-          <p style={{ margin: 0, fontWeight: 600 }}>
-            <span className="pulse">⏳</span>{" "}
+        <section className="card" style={{ marginBottom: 14 }}>
+          <p style={{ margin: 0, fontWeight: 600, display: "flex", alignItems: "center", gap: 10 }}>
+            {dots}
             {source === "llm"
-              ? "Generating a verified problem… running the regenerate-until-valid loop."
+              ? "Generating a verified problem…"
               : "Fetching a verified problem…"}
           </p>
+          <div className="skeleton" style={{ width: "92%", margin: "16px 0 8px" }} />
+          <div className="skeleton" style={{ width: "70%" }} />
           {source === "llm" && (
-            <p style={{ margin: "6px 0 0", color: "#6b7280", fontSize: 13 }}>
+            <p className="meta" style={{ margin: "14px 0 0" }}>
               Still working — {genSeconds}s elapsed
               {candidatesTried > 0 && <>, candidate #{candidatesTried} {verifying ? "being verified" : "being generated"}</>}.
               {" "}Turn on <b>Debug</b> (top-right) to watch every attempt, its timing, and its rejection reason.
@@ -734,68 +748,77 @@ export default function Practice() {
       )}
 
       {genError && !problem && (
-        <section style={{ background: "#fef2f2", border: "1px solid #fecaca", padding: 14,
-          borderRadius: 10, marginBottom: 16, display: "flex", justifyContent: "space-between",
-          alignItems: "center", gap: 12 }}>
-          <p style={{ margin: 0, color: "#991b1b" }}>{genError}</p>
+        <section className="panel panel-bad animate__animated animate__fadeIn"
+          style={{ marginBottom: 16, display: "flex", justifyContent: "space-between",
+            alignItems: "center", gap: 12 }}>
+          <p style={{ margin: 0 }}>{genError}</p>
           <button onClick={() => { logUi("retry_generation"); setGenError(null); retryGen.current(); }}
             disabled={busy} style={{ flexShrink: 0 }}>Try again</button>
         </section>
       )}
 
       {problem && (
-        <section>
-          <p style={{ color: "#666", fontSize: 14 }}>
-            {problem.domain} · {problem.skill} · difficulty {problem.difficulty_target}
-            {source === "pre_stored" ? " · pre-stored (instant)"
-              : regen != null ? ` · verified after ${regen} regeneration${regen === 1 ? "" : "s"}` : ""}
+        <section key={problem.id} className="card animate__animated animate__fadeInUp"
+          style={{ animationDuration: "420ms" }}>
+          <div className="tags">
+            <span className="tag tag-accent">{problem.skill}</span>
+            <span className="tag">{problem.domain}</span>
+            <span className="tag">difficulty {problem.difficulty_target}</span>
+            <span className="tag">
+              {source === "pre_stored" ? "pre-stored · instant"
+                : regen != null ? `verified after ${regen} regeneration${regen === 1 ? "" : "s"}` : "verified"}
+            </span>
             {source === "pre_stored" && requestedDiff != null && problem.difficulty_target !== requestedDiff && (
-              <span style={{ color: "#b45309" }}> · closest available (you picked {requestedDiff})</span>
+              <span className="tag tag-warn">closest available (you picked {requestedDiff})</span>
             )}
-          </p>
-          <p style={{ fontSize: 18 }}>{problem.statement}</p>
-          <input value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="Your answer"
-            style={{ padding: 8, width: "60%" }} />{" "}
-          <button onClick={submit} disabled={busy || !answer}>Submit</button>
-          {feedback && <p>{feedback}</p>}
+          </div>
+          <p className="problem">{problem.statement}</p>
+          <div className="answer-row">
+            <input value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="Your answer"
+              onKeyDown={(e) => e.key === "Enter" && !busy && answer && submit()} />
+            <button className="btn-primary" onClick={submit} disabled={busy || !answer}>Submit</button>
+          </div>
+          {feedback && (
+            <p className={`verdict animate__animated ${feedback.startsWith("✅")
+              ? "verdict-ok animate__bounceIn" : "verdict-bad animate__headShake"}`}
+              style={{ animationDuration: "600ms" }}>{feedback}</p>
+          )}
           {feedback && (
             <details onToggle={(e) => logUi("toggle_solution", { open: (e.target as HTMLDetailsElement).open })}>
-              <summary>Show solution</summary><p>{problem.solution}</p>
+              <summary>Show solution</summary>
+              <p className="panel" style={{ marginTop: 4 }}>{problem.solution}</p>
             </details>
           )}
         </section>
       )}
 
-      <p style={{ marginTop: 20 }}>
-        <button onClick={() => { logUi("click_next_problem", { model, skill, difficulty }); nextSameSettings(); }} disabled={busy}
+      <div className="btn-row" style={{ marginTop: 20 }}>
+        <button className="btn-primary" onClick={() => { logUi("click_next_problem", { model, skill, difficulty }); nextSameSettings(); }} disabled={busy}
           title={model === "mock" ? "Instant from the verified bank" : `Generate with ${model} at your skill/difficulty`}>
           Next problem →
-        </button>{" "}
+        </button>
         <button onClick={() => { logUi("click_adaptive_next"); streamProblem({}); }} disabled={busy}
           title="The Planner picks what to practice next (changes skill/difficulty)">
           Adaptive next (Planner) →
-        </button>{" "}
-        <button onClick={() => { logUi("open_settings"); setView("settings"); }} disabled={busy}>Change settings</button>{" "}
-        <button onClick={openStats} disabled={busy}>📊 Progress</button>
-      </p>
+        </button>
+        <button className="btn-ghost" onClick={() => { logUi("open_settings"); setView("settings"); }} disabled={busy}>Change settings</button>
+        <button className="btn-ghost" onClick={openStats} disabled={busy}>📊 Progress</button>
+      </div>
     </main>
   );
 
   // ---------- top-level: current screen + debug toggle + log panel ----------
   return (
     <>
-      <label style={{ position: "fixed", top: 8, right: 8, zIndex: 30, fontSize: 12,
-        background: "#fff", padding: "3px 8px", border: "1px solid #ddd", borderRadius: 6 }}>
+      <label className="debug-toggle">
         <input type="checkbox" checked={debug} onChange={(e) => { setDebug(e.target.checked); logUi("toggle_debug", { on: e.target.checked }); }} /> Debug
       </label>
       {screen}
       {debug && (
-        <aside style={{ position: "fixed", top: 0, right: 0, width: "46vw", height: "100vh",
-          overflow: "auto", background: "#0b1020", color: "#d1d5db", borderLeft: "1px solid #1f2937",
-          padding: 14, fontFamily: "ui-monospace, Menlo, monospace", fontSize: 12, zIndex: 25 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <aside className="debug-panel">
+          <div className="debug-head">
             <b style={{ color: "#fff" }}>Event log</b>
-            <span>
+            <span className="debug-head-tools">
               <label style={{ fontSize: 12, marginRight: 8 }}>
                 <input type="checkbox" checked={logPrompt}
                   onChange={(e) => { setLogPrompt(e.target.checked); logUi("toggle_log_prompt", { on: e.target.checked }); }} />
@@ -832,7 +855,7 @@ export default function Practice() {
           {logEvents.map((e) => {
             const { prompt, ...rest } = (e.payload || {}) as any;
             return (
-              <div key={e.id} style={{ borderBottom: "1px solid #1f2937", padding: "5px 0" }}>
+              <div key={e.id} className="log-row">
                 <div>
                   <span style={{ color: "#93c5fd" }}>#{e.id}</span>{" "}
                   <b style={{ color: logTypeColor(e.type) }}>{e.type}</b>{" "}
