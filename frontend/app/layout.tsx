@@ -1,4 +1,7 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
+import "animate.css/animate.min.css";
+import "./globals.css";
 
 export const metadata = {
   title: "STEM Problem Generator",
@@ -8,16 +11,16 @@ export const metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body
-        style={{
-          fontFamily: "system-ui, sans-serif",
-          maxWidth: 760,
-          margin: "0 auto",
-          padding: "2rem 1rem",
-          lineHeight: 1.5,
-        }}
-      >
-        {children}
+      <body>
+        <header className="appbar">
+          <Link href="/" className="brand">
+            <span className="brand-mark" aria-hidden="true">
+              ∑
+            </span>
+            Regenerate-Until-Valid
+          </Link>
+        </header>
+        <div className="shell">{children}</div>
       </body>
     </html>
   );
