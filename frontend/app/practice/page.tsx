@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, Problem, rateLimitNotice, SID_KEY } from "../../lib/api";
 
 const SESSION_KEY = "stemgen.sessionId";
@@ -60,6 +60,8 @@ export default function Practice() {
   // Why a generation didn't arrive (rate limit, provider error). Distinct from
   // `feedback`, which only renders alongside a problem.
   const [genError, setGenError] = useState<string | null>(null);
+  // Re-runs the exact last generation, so the error card can offer "Try again".
+  const retryGen = useRef<() => void>(() => {});
 
   // auth
   const [username, setUsername] = useState("");
@@ -299,6 +301,7 @@ export default function Practice() {
 
   // ---- pre-stored: instant, already verified ----
   async function fetchPreStored(id: string) {
+    retryGen.current = () => fetchPreStored(id);
     resetProblemState();
     setSource("pre_stored");
     setRequestedDiff(difficulty);
@@ -327,6 +330,7 @@ export default function Practice() {
   // opts.skill/difficulty -> keep the user's settings; empty -> Planner (adaptive).
   function streamProblem(opts: { skill?: string; difficulty?: number } = {}) {
     if (!sessionId) return;
+    retryGen.current = () => streamProblem(opts);
     resetProblemState();
     setSource("llm");
     setRequestedDiff(opts.difficulty ?? null);
@@ -731,8 +735,11 @@ export default function Practice() {
 
       {genError && !problem && (
         <section style={{ background: "#fef2f2", border: "1px solid #fecaca", padding: 14,
-          borderRadius: 10, marginBottom: 16 }}>
+          borderRadius: 10, marginBottom: 16, display: "flex", justifyContent: "space-between",
+          alignItems: "center", gap: 12 }}>
           <p style={{ margin: 0, color: "#991b1b" }}>{genError}</p>
+          <button onClick={() => { logUi("retry_generation"); setGenError(null); retryGen.current(); }}
+            disabled={busy} style={{ flexShrink: 0 }}>Try again</button>
         </section>
       )}
 
