@@ -26,6 +26,7 @@ interface Attempt {
   attempt?: number;
   skill?: string;
   difficulty_target?: number;
+  context_id?: string;
   statement?: string;
   answer?: string;
   failures?: string[];
@@ -761,6 +762,7 @@ export default function Practice() {
                 <p style={{ margin: "12px 0 0", fontWeight: 600 }}>
                   Working on <span className="tag tag-accent">{loopPlan.skill}</span>
                   {" "}<span className="tag">difficulty {loopPlan.difficulty_target}</span>
+                  {loopPlan.context_id && <span className="tag">context · {loopPlan.context_id}</span>}
                   {candidatesTried > 0 && <span className="tag">attempt {candidatesTried}</span>}
                 </p>
               )}
@@ -791,6 +793,7 @@ export default function Practice() {
             <span className="tag tag-accent">{problem.skill}</span>
             <span className="tag">{problem.domain}</span>
             <span className="tag">difficulty {problem.difficulty_target}</span>
+            {problem.context_id && <span className="tag">context · {problem.context_id}</span>}
             <span className="tag">
               {source === "pre_stored" ? "pre-stored · instant"
                 : regen != null ? `verified after ${regen} regeneration${regen === 1 ? "" : "s"}` : "verified"}

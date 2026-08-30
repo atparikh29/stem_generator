@@ -140,7 +140,8 @@ def generate_next_problem(
     # event log in full (generate_start -> candidate -> accept | reject) so the
     # entire regeneration trace is reconstructable per user and per session.
     provider_label = getattr(provider, "name", provider.__class__.__name__)
-    _emit(progress, status="plan", skill=skill, difficulty_target=difficulty_target)
+    _emit(progress, status="plan", skill=skill, difficulty_target=difficulty_target,
+          context_id=context.get("id"))
     for attempt in range(max_regenerations + 1):
         spec = GenerationSpec(skill, difficulty_target, context, failure_feedback)
         feedback_in = list(failure_feedback)  # what we fed back from the prior failure

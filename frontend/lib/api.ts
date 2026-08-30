@@ -32,6 +32,7 @@ export interface Problem {
   skill: string;
   domain: string;
   difficulty_target: number;
+  context_id: string;
   statement: string;
   solution: string;
   task: any;
