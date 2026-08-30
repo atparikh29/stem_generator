@@ -62,6 +62,8 @@ export default function Practice() {
   const [genError, setGenError] = useState<string | null>(null);
   // Re-runs the exact last generation, so the error card can offer "Try again".
   const retryGen = useRef<() => void>(() => {});
+  // The live SSE stream, so "Cancel" can abort a running regenerate-until-valid loop.
+  const esRef = useRef<EventSource | null>(null);
 
   // auth
   const [username, setUsername] = useState("");
@@ -183,6 +185,17 @@ export default function Practice() {
     setFeedback(null);
     setRegen(null);
     setGenError(null);
+  }
+
+  // Abandon the current problem (or a running generation loop) and return to the
+  // start screen. Allowed at any time — including mid-loop, which it aborts.
+  function cancelToWelcome() {
+    esRef.current?.close();
+    esRef.current = null;
+    logUi("cancel_to_welcome");
+    setBusy(false);
+    resetProblemState();
+    setView("welcome");
   }
 
   // ---- register: create account + session -> instant pre-stored problem ----
@@ -337,6 +350,7 @@ export default function Practice() {
     setView("practice");
     setBusy(true);
     const es = new EventSource(api.sessionStreamUrl(sessionId, { ...opts, logPrompt, semanticLlm }));
+    esRef.current = es;
     let settled = false; // did the stream reach a verdict of its own?
     es.onmessage = (e) => {
       const ev = JSON.parse(e.data);
@@ -498,6 +512,10 @@ export default function Practice() {
   // in the Debug panel only. Here we surface just a neutral progress spinner.
   const candidatesTried = attempts.filter((a) => a.status === "generating").length;
   const verifying = attempts.length > 0 && attempts[attempts.length - 1].status === "verifying";
+  // What the loop is working on this attempt (the Planner's "plan" event carries it).
+  const loopPlan = attempts.find((a) => a.skill);
+  // A problem is shown but not yet submitted: the student must answer or cancel.
+  const hasUnanswered = !!problem && feedback == null;
 
   // Three staggered dots — the shared "working" indicator.
   const dots = (
@@ -738,11 +756,20 @@ export default function Practice() {
           <div className="skeleton" style={{ width: "92%", margin: "16px 0 8px" }} />
           <div className="skeleton" style={{ width: "70%" }} />
           {source === "llm" && (
-            <p className="meta" style={{ margin: "14px 0 0" }}>
-              Still working — {genSeconds}s elapsed
-              {candidatesTried > 0 && <>, candidate #{candidatesTried} {verifying ? "being verified" : "being generated"}</>}.
-              {" "}Turn on <b>Debug</b> (top-right) to watch every attempt, its timing, and its rejection reason.
-            </p>
+            <>
+              {loopPlan?.skill && (
+                <p style={{ margin: "12px 0 0", fontWeight: 600 }}>
+                  Working on <span className="tag tag-accent">{loopPlan.skill}</span>
+                  {" "}<span className="tag">difficulty {loopPlan.difficulty_target}</span>
+                  {candidatesTried > 0 && <span className="tag">attempt {candidatesTried}</span>}
+                </p>
+              )}
+              <p className="meta" style={{ margin: "10px 0 0" }}>
+                Still working — {genSeconds}s elapsed
+                {candidatesTried > 0 && <>, candidate #{candidatesTried} {verifying ? "being verified" : "being generated"}</>}.
+                {" "}Turn on <b>Debug</b> (top-right) to watch every attempt, its timing, and its rejection reason.
+              </p>
+            </>
           )}
         </section>
       )}
@@ -792,17 +819,25 @@ export default function Practice() {
         </section>
       )}
 
-      <div className="btn-row" style={{ marginTop: 20 }}>
-        <button className="btn-primary" onClick={() => { logUi("click_next_problem", { model, skill, difficulty }); nextSameSettings(); }} disabled={busy}
-          title={model === "mock" ? "Instant from the verified bank" : `Generate with ${model} at your skill/difficulty`}>
+      {hasUnanswered && (
+        <p className="meta" style={{ marginTop: 16 }}>
+          Answer the problem to continue — or <b>Cancel</b> to return to the start.
+        </p>
+      )}
+      <div className="btn-row" style={{ marginTop: hasUnanswered ? 8 : 20 }}>
+        <button className="btn-primary" onClick={() => { logUi("click_next_problem", { model, skill, difficulty }); nextSameSettings(); }}
+          disabled={busy || hasUnanswered}
+          title={hasUnanswered ? "Answer the current problem first"
+            : model === "mock" ? "Instant from the verified bank" : `Generate with ${model} at your skill/difficulty`}>
           Next problem →
         </button>
-        <button onClick={() => { logUi("click_adaptive_next"); streamProblem({}); }} disabled={busy}
-          title="The Planner picks what to practice next (changes skill/difficulty)">
+        <button onClick={() => { logUi("click_adaptive_next"); streamProblem({}); }} disabled={busy || hasUnanswered}
+          title={hasUnanswered ? "Answer the current problem first" : "The Planner picks what to practice next (changes skill/difficulty)"}>
           Adaptive next (Planner) →
         </button>
-        <button className="btn-ghost" onClick={() => { logUi("open_settings"); setView("settings"); }} disabled={busy}>Change settings</button>
+        <button className="btn-ghost" onClick={() => { logUi("open_settings"); setView("settings"); }} disabled={busy || hasUnanswered}>Change settings</button>
         <button className="btn-ghost" onClick={openStats} disabled={busy}>📊 Progress</button>
+        <button className="btn-ghost" onClick={cancelToWelcome} title="Abandon this problem and return to the start screen">Cancel</button>
       </div>
     </main>
   );
