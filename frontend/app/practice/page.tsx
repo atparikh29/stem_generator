@@ -65,6 +65,11 @@ export default function Practice() {
   const retryGen = useRef<() => void>(() => {});
   // The live SSE stream, so "Cancel" can abort a running regenerate-until-valid loop.
   const esRef = useRef<EventSource | null>(null);
+  // Wall-clock timing: when generation started, and how long it took to deliver.
+  const genStartRef = useRef<number>(0);
+  const [deliverMs, setDeliverMs] = useState<number | null>(null);
+  // How long the student has spent on the current (unanswered) problem.
+  const [solveSeconds, setSolveSeconds] = useState(0);
 
   // auth
   const [username, setUsername] = useState("");
@@ -186,7 +191,16 @@ export default function Practice() {
     setFeedback(null);
     setRegen(null);
     setGenError(null);
+    setDeliverMs(null);
   }
+
+  // Count up while the student is solving the current problem; freeze on submit.
+  useEffect(() => {
+    if (!(problem && feedback == null)) return;
+    setSolveSeconds(0);
+    const t = setInterval(() => setSolveSeconds((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [problem?.id, feedback]);
 
   // Abandon the current problem (or a running generation loop) and return to the
   // start screen. Allowed at any time — including mid-loop, which it aborts.
@@ -321,9 +335,13 @@ export default function Practice() {
     setRequestedDiff(difficulty);
     setView("practice");
     setBusy(true);
+    genStartRef.current = Date.now();
     try {
       const res = await api.preStored(id, { skill, difficulty, context: ctx });
-      if (res.accepted) setProblem(res.problem as Problem);
+      if (res.accepted) {
+        setProblem(res.problem as Problem);
+        setDeliverMs(Date.now() - genStartRef.current);
+      }
       setRegen(0);
     } catch (e: any) {
       // Without this, "Next problem" (which doesn't await) failed silently.
@@ -350,6 +368,7 @@ export default function Practice() {
     setRequestedDiff(opts.difficulty ?? null);
     setView("practice");
     setBusy(true);
+    genStartRef.current = Date.now();
     const es = new EventSource(api.sessionStreamUrl(sessionId, { ...opts, logPrompt, semanticLlm }));
     esRef.current = es;
     let settled = false; // did the stream reach a verdict of its own?
@@ -358,7 +377,10 @@ export default function Practice() {
       if (ev.type === "progress") setAttempts((a) => [...a, ev as Attempt]);
       else if (ev.type === "result") {
         settled = true;
-        if (ev.accepted) setProblem(ev.problem as Problem);
+        if (ev.accepted) {
+          setProblem(ev.problem as Problem);
+          setDeliverMs(Date.now() - genStartRef.current);
+        }
         setRegen(ev.regen_count);
         setBusy(false);
         es.close();
@@ -517,6 +539,8 @@ export default function Practice() {
   const loopPlan = attempts.find((a) => a.skill);
   // A problem is shown but not yet submitted: the student must answer or cancel.
   const hasUnanswered = !!problem && feedback == null;
+  const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  const fmtDelivery = (ms: number) => (ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`);
 
   // Three staggered dots — the shared "working" indicator.
   const dots = (
@@ -798,11 +822,16 @@ export default function Practice() {
               {source === "pre_stored" ? "pre-stored · instant"
                 : regen != null ? `verified after ${regen} regeneration${regen === 1 ? "" : "s"}` : "verified"}
             </span>
+            {deliverMs != null && <span className="tag">delivered in {fmtDelivery(deliverMs)}</span>}
             {source === "pre_stored" && requestedDiff != null && problem.difficulty_target !== requestedDiff && (
               <span className="tag tag-warn">closest available (you picked {requestedDiff})</span>
             )}
           </div>
           <p className="problem">{problem.statement}</p>
+          <p className="meta" style={{ textAlign: "right", margin: "0 0 6px",
+            fontVariantNumeric: "tabular-nums" }}>
+            ⏱ {clock(solveSeconds)}{feedback == null ? " · solving" : " · time to solve"}
+          </p>
           <div className="answer-row">
             <input value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="Your answer"
               onKeyDown={(e) => e.key === "Enter" && !busy && answer && submit()} />
