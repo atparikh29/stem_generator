@@ -1,6 +1,30 @@
+import pytest
+import sympy as sp
+
 from app.schemas.generator import MathTask
+from app.translation.registry import parse_math
 from app.verification import math_verifier
 from app.verification.result import FailureCode
+
+
+@pytest.mark.parametrize(
+    "student, canonical",
+    [
+        # A variable fused to a function name — the parser used to read "xsin"
+        # as one symbol and split it into x*s*i*n.
+        ("2xsin(4x)", "2*x*sin(4*x)"),
+        ("4x^2cos(4x)+2xsin(4x)", "4*x**2*cos(4*x) + 2*x*sin(4*x)"),
+        ("x^2cos(4x)", "x**2*cos(4*x)"),
+        ("sin(2xcos(x))", "sin(2*x*cos(x))"),
+    ],
+)
+def test_variable_glued_to_function_parses(student, canonical):
+    assert sp.simplify(parse_math(student) - parse_math(canonical)) == 0
+
+
+def test_glued_does_not_corrupt_prefixed_functions():
+    # "asin(" must stay the arcsine, not become a*sin(.
+    assert parse_math("asin(x)") == sp.asin(sp.Symbol("x", real=True))
 
 
 def test_correct_derivative_passes():
