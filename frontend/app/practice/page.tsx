@@ -523,6 +523,8 @@ export default function Practice() {
             <option value="gemini">Gemini (needs key)</option>
             <option value="deepseek">DeepSeek (needs key)</option>
             <option value="gemma">Gemma (local)</option>
+            <option value="mistral">Mistral-Nemo (local)</option>
+            <option value="deepseek_r1">DeepSeek-R1 (local)</option>
           </select>
         </label>
         {submitLabel && <button className="btn-primary" onClick={onSubmit} disabled={busy}>{submitLabel}</button>}

@@ -33,6 +33,17 @@ class Settings(BaseSettings):
     gemma_model: str = "gemma3"
     gemma_base_url: str = "http://localhost:11434/v1"
 
+    # Mistral-Nemo served locally by Ollama. Set MISTRAL_MODEL to the `ollama list` tag.
+    mistral_api_key: str = ""
+    mistral_model: str = "mistral-nemo"
+    mistral_base_url: str = "http://localhost:11434/v1"
+
+    # DeepSeek-R1 (reasoning model) served locally by Ollama. Its <think>...</think>
+    # preamble is stripped before JSON parsing (see llm/prompt.py).
+    deepseek_r1_api_key: str = ""
+    deepseek_r1_model: str = "deepseek-r1:14b"
+    deepseek_r1_base_url: str = "http://localhost:11434/v1"
+
     database_url: str = "sqlite:///./stemgen.db"
 
     # Per-call LLM network budget. Bounds a stalled/rate-limited provider call
