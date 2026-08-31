@@ -95,12 +95,6 @@ def _build_math(skill: str, k: int):
         simplified = sp.simplify(f)
         return _math("simplify", str(f), str(simplified),
                      f"Simplify {f}.", f"Using sin^2+cos^2=1, the expression equals {simplified}.")
-    if skill == "vectors":
-        a, b = _R.randint(2, 8), _R.randint(2, 8)
-        mag = sp.sqrt(a * a + b * b)
-        return _math("simplify", f"sqrt({a}**2 + {b}**2)", str(mag),
-                     f"Find the magnitude of the vector <{a}, {b}>.",
-                     f"|v| = sqrt({a}^2 + {b}^2) = {mag}.")
     if skill == "function_transformations":
         # Expand (x + c)^(k+1); higher power -> more terms -> higher difficulty.
         c = _R.randint(1, 5)
