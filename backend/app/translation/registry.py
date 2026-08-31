@@ -9,6 +9,8 @@ adversarial expression fails closed (raises) rather than executing anything.
 """
 from __future__ import annotations
 
+import re
+
 import sympy as sp
 from sympy.parsing.sympy_parser import (
     implicit_multiplication_application,
@@ -36,6 +38,39 @@ class TranslationError(ValueError):
     """Raised when JSON cannot be mapped to a verifiable symbolic form."""
 
 
+# Function names the parser knows, longest first so we peel the longest match
+# (e.g. prefer "asin" over its "sin" suffix).
+_FUNC_NAMES = sorted(
+    (k for k, v in _ALLOWED_FUNCS.items() if callable(v)),
+    key=len,
+    reverse=True,
+)
+
+
+def _disambiguate_funcs(expr: str) -> str:
+    """Insert an explicit ``*`` where a variable is glued to a function call.
+
+    SymPy's implicit-multiplication parser handles ``2*x*sin(4*x)`` and even
+    ``2sin(x)``, but a bare variable fused to a function name — ``2xsin(4x)`` —
+    is read as one symbol ``xsin`` and split into ``x*s*i*n``. Students write
+    the fused form constantly (``2xsin(4x)``, ``x^2cos(x)``), so before parsing
+    we split any maximal letter-run sitting directly before ``(`` into its
+    variable prefix and trailing known function: ``xsin(`` -> ``x*sin(``. A run
+    that is itself a known name (``sin``, ``asin``, ``log``) is left untouched.
+    """
+
+    def repl(match: re.Match[str]) -> str:
+        run = match.group(0)
+        if run in _ALLOWED_FUNCS:  # whole run is a function/const — leave it
+            return run
+        for fn in _FUNC_NAMES:
+            if len(fn) < len(run) and run.endswith(fn):
+                return f"{run[:-len(fn)]}*{fn}"
+        return run
+
+    return re.sub(r"[A-Za-z]+(?=\()", repl, expr)
+
+
 def parse_math(expr: str, variable: str = "x") -> sp.Expr:
     """Parse a single expression using the restricted allow-list."""
     local = dict(_ALLOWED_FUNCS)
@@ -43,6 +78,7 @@ def parse_math(expr: str, variable: str = "x") -> sp.Expr:
     # Models often write "^" for exponentiation; in Python/SymPy that's XOR. No
     # STEM expression here means bitwise XOR, so normalize it to "**".
     expr = expr.replace("^", "**")
+    expr = _disambiguate_funcs(expr)
     try:
         parsed = parse_expr(
             expr,

@@ -2,7 +2,7 @@
 
 **Regenerate-Until-Valid: A Neuro-Symbolic Agentic Framework for Reliable STEM Problem Generation**
 
-Anay Parikh, Isabella Chen, Ashna Munavalli, Faiza Fatima, Nikhil Sinha · Advisor: Suresh Subramaniam
+Anay Parikh, Yuki Tanaka, Isabella Chen, Faiza Fatima, Ashna Munavalli · Advisor: Suresh Subramaniam
 
 > Word count: 239 (limit 250). Learning-outcome claims are framed as a *planned*
 > pilot protocol — no human data has been collected yet.

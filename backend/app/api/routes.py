@@ -205,7 +205,7 @@ def _problem_stream(student_id: str, provider_override: Optional[str],
 
             def progress(ev: dict) -> None:
                 q.put({"type": "progress", **{k: ev.get(k) for k in
-                       ("status", "attempt", "skill", "difficulty_target",
+                       ("status", "attempt", "skill", "difficulty_target", "context_id",
                         "statement", "answer", "details", "failures", "feedback", "step")}})
 
             use_sem = settings.semantic_llm_check if semantic_llm is None else semantic_llm
