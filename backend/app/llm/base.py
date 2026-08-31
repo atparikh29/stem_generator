@@ -75,6 +75,14 @@ def get_provider(override: str | None = None) -> LLMProvider:
         from .gemma_provider import GemmaProvider
 
         return _throttled(GemmaProvider())
+    if provider == "mistral":
+        from .mistral_provider import MistralProvider
+
+        return _throttled(MistralProvider())
+    if provider == "deepseek_r1":
+        from .deepseek_r1_provider import DeepSeekR1Provider
+
+        return _throttled(DeepSeekR1Provider())
     raise ValueError(f"unknown LLM_PROVIDER: {settings.llm_provider}")
 
 

@@ -10,9 +10,15 @@ as data in `content/prompts.json`; only the assembly logic lives here.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from pydantic import ValidationError
+
+# Reasoning models (e.g. DeepSeek-R1 via Ollama) prepend a <think>...</think>
+# block whose prose can contain braces and would poison brace-based JSON
+# extraction. Strip it before parsing. Harmless for non-reasoning models.
+_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 
 from ..content.skills import SKILLS, method_of
 from ..schemas.generator import GeneratorOutput
@@ -26,14 +32,20 @@ SYSTEM_INSTRUCTION = _PROMPTS["system_instruction"]
 def _task_spec(skill: str) -> str:
     if method_of(skill) == "physics":
         return _PROMPTS["physics_spec"].get(SKILLS[skill].get("template", ""), "")
-    return _PROMPTS["math_spec"].get(method_of(skill), "")
+    # Prefer a skill-specific spec; fall back to the shared per-method one. Skills
+    # whose word-problem framing differs from a bare method (optimization,
+    # exp_log_equations, function_transformations) override here.
+    return _PROMPTS["math_spec"].get(skill) or _PROMPTS["math_spec"].get(method_of(skill), "")
 
 
 def _example(skill: str) -> str:
     if method_of(skill) == "physics":
         tmpl = SKILLS[skill].get("template", "")
         return _PROMPTS["physics_example"].get(tmpl, _PROMPTS["physics_example"]["kinematics"])
-    return _PROMPTS["math_example"].get(method_of(skill), _PROMPTS["math_example"]["derivative"])
+    # Skill-specific example first (so a skill isn't taught with a sibling skill's
+    # example), then the shared per-method example.
+    return (_PROMPTS["math_example"].get(skill)
+            or _PROMPTS["math_example"].get(method_of(skill), _PROMPTS["math_example"]["derivative"]))
 
 
 def build_generation_prompt(spec: GenerationSpec) -> str:
@@ -68,6 +80,10 @@ def build_generation_prompt(spec: GenerationSpec) -> str:
 
 def parse_generator_output(raw: str) -> GeneratorOutput:
     """Extract and validate JSON. Raises ValueError on invalid -> json_invalid."""
+    raw = _THINK_RE.sub("", raw)
+    # Drop an unterminated reasoning preamble too (rare truncation of </think>).
+    if "<think>" in raw and "</think>" not in raw:
+        raw = raw.split("<think>", 1)[0]
     start, end = raw.find("{"), raw.rfind("}")
     if start == -1 or end == -1:
         raise ValueError("no JSON object found in model output")
