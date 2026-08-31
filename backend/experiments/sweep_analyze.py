@@ -28,10 +28,24 @@ from pathlib import Path
 from .harness import FAILURE_CODES
 from .plots import grouped_bar_svg, html_report, stacked_bar_svg, table_html
 
-PROVIDER_ORDER = ["openai", "gemma", "gemini", "deepseek", "anthropic"]
+PROVIDER_ORDER = ["openai", "gemma", "mistral", "deepseek_r1", "gemini", "deepseek", "anthropic"]
 PROVIDER_LABEL = {"openai": "Llama 3.1 8B", "gemma": "Gemma 4",
+                  "mistral": "Mistral-Nemo", "deepseek_r1": "DeepSeek-R1 14B",
                   "gemini": "Gemini 2.5 Flash", "deepseek": "DeepSeek-V3",
                   "anthropic": "Claude Opus 4.8"}
+
+# Static deployment metadata. Local footprints are the Ollama GGUF sizes (a good
+# proxy for RAM/VRAM to load; runtime needs that plus KV-cache + overhead).
+# Cloud models are proprietary — weights/size undisclosed.
+PROVIDER_META = {
+    "openai":      {"params": "8B",    "footprint": "4.9 GB", "deploy": "Local (Ollama)"},
+    "gemma":       {"params": "8B",    "footprint": "9.6 GB", "deploy": "Local (Ollama)"},
+    "mistral":     {"params": "12B",   "footprint": "7.1 GB", "deploy": "Local (Ollama)"},
+    "deepseek_r1": {"params": "14.8B", "footprint": "9.0 GB", "deploy": "Local (Ollama)"},
+    "gemini":      {"params": "—",     "footprint": "cloud",  "deploy": "API key"},
+    "deepseek":    {"params": "—",     "footprint": "cloud",  "deploy": "API key"},
+    "anthropic":   {"params": "—",     "footprint": "cloud",  "deploy": "API key"},
+}
 
 
 def _load(path: Path) -> list[dict]:
@@ -73,10 +87,10 @@ def analyze_provider(rows: list[dict], max_regen: int) -> dict:
                 round_codes[rd.get("round", 0)][code] += 1
                 total_failures[code] += 1
 
-    def _bucket(key: str):
+    def _bucket_by(keyfn):
         out = {}
         for r in usable:
-            g = r.get(key)
+            g = keyfn(r)
             d = out.setdefault(g, {"n": 0, "fp": 0, "post": 0})
             d["n"] += 1
             if r.get("accepted"):
@@ -88,10 +102,23 @@ def analyze_provider(rows: list[dict], max_regen: int) -> dict:
                     "post_loop": round(v["post"] / v["n"], 4)}
                 for g, v in out.items()}
 
+    def _bucket(key: str):
+        return _bucket_by(lambda r: r.get(key))
+
+    # math = precalculus + calculus (SymPy-checked); physics = template + units.
+    def _track(r):
+        return "physics" if r.get("domain") == "physics" else "math"
+
     fp_ci = _wilson(first_pass, n)
     post_ci = _wilson(len(delivered), n)
+    walls = sorted(r["wall_ms"] for r in usable if "wall_ms" in r)
+    median_ms = walls[len(walls) // 2] if walls else 0
+    mean_ms = (sum(walls) / len(walls)) if walls else 0
     return {
         "usable": n, "errors": errors,
+        "median_seconds": round(median_ms / 1000, 1),
+        "mean_seconds": round(mean_ms / 1000, 1),
+        "total_minutes": round(sum(walls) / 60000, 1),
         "first_pass_validity": round(first_pass / n, 4) if n else 0.0,
         "post_loop_validity": round(len(delivered) / n, 4) if n else 0.0,
         "first_pass_ci95": [round(x, 4) for x in fp_ci],
@@ -100,6 +127,7 @@ def analyze_provider(rows: list[dict], max_regen: int) -> dict:
         "errors_intercepted": sum(total_failures.values()),
         "failure_distribution": {c: total_failures.get(c, 0) for c in FAILURE_CODES},
         "failure_trajectory": {str(rd): dict(cnt) for rd, cnt in sorted(round_codes.items())},
+        "by_track": _bucket_by(_track),   # math vs physics
         "by_domain": _bucket("domain"),
         "by_difficulty": {str(k): v for k, v in sorted(_bucket("difficulty").items())},
         "by_skill": {r: {"n": d["n"], "post_loop": d["post_loop"]}
@@ -174,7 +202,13 @@ def run(root: Path) -> dict:
     # ---- charts ----
     # Budget curve (available providers).
     xs = list(range(0, max_regen + 1))
-    curve_series = {PROVIDER_LABEL[p]: [results[p]["budget_curve"][b] for b in xs] for p in available}
+
+    def _curve_at(p: str, b: int) -> float:
+        # A provider run at a smaller max_regen plateaus at its own final value.
+        bc = results[p]["budget_curve"]
+        return bc[b] if b in bc else bc[max(bc)]
+
+    curve_series = {PROVIDER_LABEL[p]: [_curve_at(p, b) for b in xs] for p in available}
     (outdir / "budget_curve.svg").write_text(_line_svg("Validity vs regeneration budget", xs, curve_series))
 
     # Cross-model validity bars.
@@ -216,13 +250,17 @@ def run(root: Path) -> dict:
         "root": str(root), "max_regen": max_regen,
         "available_providers": available, "unavailable_providers": unavailable,
         "providers": {p: {
-            "label": PROVIDER_LABEL[p], "usable": results[p]["usable"],
+            "label": PROVIDER_LABEL[p], **PROVIDER_META.get(p, {}),
+            "usable": results[p]["usable"],
             "errors": results[p]["errors"],
             "single_shot": results[p]["first_pass_validity"],
             "closed_loop": results[p]["post_loop_validity"],
             "single_shot_ci95": results[p]["first_pass_ci95"],
             "closed_loop_ci95": results[p]["post_loop_ci95"],
             "errors_intercepted": results[p]["errors_intercepted"],
+            "median_seconds": results[p]["median_seconds"],
+            "mean_seconds": results[p]["mean_seconds"],
+            "by_track": results[p]["by_track"],   # math vs physics single-shot/closed-loop
             "budget_curve": results[p]["budget_curve"],
         } for p in provs},
         "variance_openai": variance,
@@ -234,10 +272,19 @@ def run(root: Path) -> dict:
     svgs = [str((outdir / f).read_text()) for f in
             ["budget_curve.svg", "cross_model_validity.svg", "by_difficulty.svg",
              "by_domain.svg", "failure_trajectory.svg"] if (outdir / f).exists()]
-    tbl = table_html(["model", "usable n", "single-shot", "closed-loop", "errors caught"],
-        [[PROVIDER_LABEL[p], results[p]["usable"],
-          f'{results[p]["first_pass_validity"]:.0%}', f'{results[p]["post_loop_validity"]:.0%}',
-          results[p]["errors_intercepted"]] for p in available])
+    def _trk(p, track, field):
+        t = results[p]["by_track"].get(track)
+        return f'{t[field]:.0%}' if t else "—"
+
+    tbl = table_html(
+        ["model", "deploy", "footprint", "n", "overall", "math (s→c)", "physics (s→c)",
+         "errors caught", "median s/prob"],
+        [[PROVIDER_LABEL[p], PROVIDER_META.get(p, {}).get("deploy", "—"),
+          PROVIDER_META.get(p, {}).get("footprint", "—"), results[p]["usable"],
+          f'{results[p]["first_pass_validity"]:.0%}→{results[p]["post_loop_validity"]:.0%}',
+          f'{_trk(p, "math", "first_pass")}→{_trk(p, "math", "post_loop")}',
+          f'{_trk(p, "physics", "first_pass")}→{_trk(p, "physics", "post_loop")}',
+          results[p]["errors_intercepted"], f'{results[p]["median_seconds"]:.0f}s'] for p in available])
     intro = ("Every number below is reconstructed from per-attempt logs of the closed loop "
              f"run at max_regen={max_regen}. Single-shot = validity at budget 0; closed-loop = "
              "validity at full budget. Providers with no usable requests were unavailable "

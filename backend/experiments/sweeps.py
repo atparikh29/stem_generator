@@ -95,9 +95,16 @@ def classify_quota(exc: Exception) -> tuple[str, float | None, str | None]:
 
 
 def _grid(seed: int) -> list[tuple[str, int]]:
-    """All (skill, difficulty) cells, rotated by seed for varied sampling order."""
+    """All (skill, difficulty) cells in DIFFICULTY-MAJOR (round-robin) order.
+
+    Every skill appears once at difficulty 1 before any appears at 2, so a
+    partial run of n < full still covers all skills (and both domains) — a
+    skill-major order would spend the first ~45 cells entirely on math and never
+    reach physics. Rotated by seed for varied sampling order.
+    """
     skills = all_skills()
-    cells = [(s, d) for s in skills for d in DIFFICULTIES]
+    cells = [(skills[i % len(skills)], DIFFICULTIES[(i // len(skills)) % len(DIFFICULTIES)])
+             for i in range(len(skills) * len(DIFFICULTIES))]
     off = seed % len(cells)
     return cells[off:] + cells[:off]
 
