@@ -522,6 +522,7 @@ export default function Practice() {
             <option value="gemma">Gemma 4 (local)</option>
             <option value="mistral">Mistral-Nemo (local)</option>
             <option value="deepseek_r1">DeepSeek-R1 14B (local)</option>
+            <option value="gpt">GPT-5.2 (needs key)</option>
             <option value="anthropic">Claude Opus 4.8 (needs key)</option>
             <option value="gemini">Gemini 3.6 Flash (needs key)</option>
             <option value="deepseek">DeepSeek-V3 (needs key)</option>

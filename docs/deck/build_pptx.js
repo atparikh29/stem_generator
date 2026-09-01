@@ -168,7 +168,7 @@ s.addNotes("The LLM's only verification role is an advisory clarity score. All c
 s=p.addSlide(); bg(s,PAPER);
 eyebrow(s,"System & Scope");
 title(s,"Offline-first, model-agnostic, verifiably seeded.",{size:29});
-const scg=[["8","Model backends","One interface: Llama, GPT, Gemma, Mistral, DeepSeek and Gemini all speak the OpenAI-compatible API; Claude uses Anthropic's; plus an offline mock."],
+const scg=[["9","Model backends","One interface: Llama, GPT, Gemma, Mistral, DeepSeek (V3 + R1) and Gemini all speak the OpenAI-compatible API; Claude uses Anthropic's; plus an offline mock."],
   ["19","Skills · 3 domains","Precalculus, single-variable Calculus, AP Physics 1."],
   ["1,226","Pre-verified problems","An offline mock oracle seeds a bank where every item passed the full verifier."],
   ["1D·2D·rot","Physics coverage","Projectile, incline, torque, rotational kinematics & dynamics — difficulty 1–5."]];
@@ -179,7 +179,7 @@ scg.forEach(c=>{ s.addShape(p.ShapeType.roundRect,{x:scx,y:2.45,w:2.86,h:2.7,rec
   s.addText(c[2],{x:scx+0.22,y:4.15,w:2.52,h:0.95,fontFace:BODY,fontSize:12,color:MUTED,lineSpacing:16,valign:"top"}); scx+=3.03; });
 s.addText("Stack: Next.js · FastAPI · SQLite · immutable event log. The offline mock path keeps the whole pipeline reproducible with no keys.",
   {x:MW,y:5.55,w:12,h:0.6,fontFace:MONO,fontSize:12,color:MUTED,lineSpacing:18});
-s.addNotes("Eight interchangeable LLM backends; a 1,226-problem verified bank built offline; physics spans 1D, 2D, and rotational.");
+s.addNotes("Nine interchangeable LLM backends; a 1,226-problem verified bank built offline; physics spans 1D, 2D, and rotational.");
 
 /* 8 ARCHITECTURE */
 {

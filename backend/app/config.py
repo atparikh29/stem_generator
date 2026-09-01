@@ -14,6 +14,12 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-5.2"
     openai_base_url: str = ""  # set for Llama via an OpenAI-compatible server
 
+    # GPT on OpenAI's own API (no base_url override). Separate from the openai slot,
+    # which this project points at a local Llama server. Needs a real OpenAI key.
+    gpt_api_key: str = ""
+    gpt_model: str = "gpt-5.2"
+    gpt_base_url: str = ""
+
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-opus-4-8"
 
