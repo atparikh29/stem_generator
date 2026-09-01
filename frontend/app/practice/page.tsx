@@ -518,7 +518,7 @@ export default function Practice() {
         <label className="control">Model
           <select value={model} onChange={(e) => { setModel(e.target.value); logUi("change_setting", { field: "model", value: e.target.value }); }}>
             <option value="mock">Mock (instant)</option>
-            <option value="openai">Llama (local)</option>
+            <option value="openai">Llama / GPT (OpenAI-compatible)</option>
             <option value="anthropic">Claude (needs key)</option>
             <option value="gemini">Gemini (needs key)</option>
             <option value="deepseek">DeepSeek (needs key)</option>
