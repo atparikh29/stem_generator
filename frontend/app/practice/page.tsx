@@ -518,13 +518,13 @@ export default function Practice() {
         <label className="control">Model
           <select value={model} onChange={(e) => { setModel(e.target.value); logUi("change_setting", { field: "model", value: e.target.value }); }}>
             <option value="mock">Mock (instant)</option>
-            <option value="openai">Llama (local)</option>
-            <option value="gemma">Gemma (local)</option>
+            <option value="openai">Llama 3.1 (local)</option>
+            <option value="gemma">Gemma 4 (local)</option>
             <option value="mistral">Mistral-Nemo (local)</option>
-            <option value="deepseek_r1">DeepSeek-R1 (local)</option>
-            <option value="anthropic">Claude (needs key)</option>
-            <option value="gemini">Gemini (needs key)</option>
-            <option value="deepseek">DeepSeek (needs key)</option>
+            <option value="deepseek_r1">DeepSeek-R1 14B (local)</option>
+            <option value="anthropic">Claude Opus 4.8 (needs key)</option>
+            <option value="gemini">Gemini 3.6 Flash (needs key)</option>
+            <option value="deepseek">DeepSeek-V3 (needs key)</option>
           </select>
         </label>
         {submitLabel && <button className="btn-primary" onClick={onSubmit} disabled={busy}>{submitLabel}</button>}

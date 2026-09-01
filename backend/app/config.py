@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     # Google Gemini via its OpenAI-compatible endpoint.
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.6-flash"
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
     # DeepSeek via its OpenAI-compatible endpoint.
