@@ -75,6 +75,10 @@ def get_provider(override: str | None = None) -> LLMProvider:
         from .gemma_provider import GemmaProvider
 
         return _throttled(GemmaProvider())
+    if provider == "gpt":
+        from .gpt_provider import GptProvider
+
+        return _throttled(GptProvider())
     if provider == "mistral":
         from .mistral_provider import MistralProvider
 

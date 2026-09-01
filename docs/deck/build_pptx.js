@@ -168,7 +168,7 @@ s.addNotes("The LLM's only verification role is an advisory clarity score. All c
 s=p.addSlide(); bg(s,PAPER);
 eyebrow(s,"System & Scope");
 title(s,"Offline-first, model-agnostic, verifiably seeded.",{size:29});
-const scg=[["8","Interchangeable models","Mock · Llama/GPT · Claude · Gemini · DeepSeek · Gemma · Mistral · DeepSeek-R1 — one interface."],
+const scg=[["8","LLM backends","Llama, GPT, Gemma, Mistral, DeepSeek (V3 + R1), Gemini, Claude — plus an offline mock oracle. All behind one interface."],
   ["19","Skills · 3 domains","Precalculus, single-variable Calculus, AP Physics 1."],
   ["1,226","Pre-verified problems","An offline mock oracle seeds a bank where every item passed the full verifier."],
   ["1D·2D·rot","Physics coverage","Projectile, incline, torque, rotational kinematics & dynamics — difficulty 1–5."]];
@@ -179,7 +179,7 @@ scg.forEach(c=>{ s.addShape(p.ShapeType.roundRect,{x:scx,y:2.45,w:2.86,h:2.7,rec
   s.addText(c[2],{x:scx+0.22,y:4.15,w:2.52,h:0.95,fontFace:BODY,fontSize:12,color:MUTED,lineSpacing:16,valign:"top"}); scx+=3.03; });
 s.addText("Stack: Next.js · FastAPI · SQLite · immutable event log. The offline mock path keeps the whole pipeline reproducible with no keys.",
   {x:MW,y:5.55,w:12,h:0.6,fontFace:MONO,fontSize:12,color:MUTED,lineSpacing:18});
-s.addNotes("Eight interchangeable LLM backends; a 1,226-problem verified bank built offline; physics spans 1D, 2D, and rotational.");
+s.addNotes("Eight interchangeable LLM backends plus an offline mock oracle; a 1,226-problem verified bank built offline; physics spans 1D, 2D, and rotational.");
 
 /* 8 ARCHITECTURE */
 {
@@ -206,7 +206,7 @@ s.addText("CONTENT · JSON",{x:0.5,y:bY+0.12,w:1.92,h:0.24,align:"center",fontFa
 hArrow(s,2.42,bY+bH/2,0.16);
 s.addShape(p.ShapeType.roundRect,{x:10.91,y:bY,w:1.92,h:bH,rectRadius:0.1,fill:{color:"0B1020"},line:{color:"22304A",width:1},shadow:sh({opacity:0.3})});
 s.addText("LLM PROVIDERS",{x:10.91,y:bY+0.12,w:1.92,h:0.24,align:"center",fontFace:MONO,fontSize:8.5,bold:true,color:"9FC0E0",charSpacing:.5});
-["mock  (offline)","Llama / GPT","Claude","Gemini","DeepSeek","Gemma","Mistral","DeepSeek-R1"].forEach((t,i)=>{ s.addText("·  "+t,{x:11.05,y:bY+0.48+i*0.29,w:1.75,h:0.27,fontFace:MONO,fontSize:9,color:i===0?"4ADE80":"D7E1EA",valign:"middle"}); });
+["mock  (offline)","OpenAI-compatible:","·  Llama · GPT","·  Gemma · Mistral","·  DeepSeek · R1","·  Gemini","Anthropic API:","·  Claude"].forEach((t,i)=>{ const hdr=t.endsWith(":"); s.addText(t,{x:11.05,y:bY+0.48+i*0.29,w:1.75,h:0.27,fontFace:MONO,fontSize:hdr?8:9,bold:hdr,color:i===0?"4ADE80":(hdr?"9FC0E0":"D7E1EA"),valign:"middle"}); });
 hArrow(s,10.73,bY+bH/2,0.16,true);
 vArrow(s,bx+bw2/2,bY+bH,0.3);
 s.addText("append-only events · read saved state",{x:bx+bw2/2+0.15,y:bY+bH+0.02,w:4,h:0.3,fontFace:MONO,fontSize:9,color:MUTED,valign:"middle"});
