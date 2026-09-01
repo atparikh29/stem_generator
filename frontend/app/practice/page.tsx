@@ -47,7 +47,7 @@ export default function Practice() {
   const [ctx, setCtx] = useState("generic");
   const [skill, setSkill] = useState("kinematics");
   const [difficulty, setDifficulty] = useState(1);
-  const [model, setModel] = useState("mock");
+  const [model, setModel] = useState("openai");
 
   // practice state
   const [problem, setProblem] = useState<Problem | null>(null);
@@ -129,7 +129,7 @@ export default function Practice() {
     setCtx(s.current_context_id || "generic");
     setSkill(s.current_skill || "kinematics");
     setDifficulty(s.current_difficulty || 1);
-    setModel(s.current_model || "mock");
+    setModel(s.current_model || "openai");
   }
 
   // ---- debug log ----
@@ -518,13 +518,13 @@ export default function Practice() {
         <label className="control">Model
           <select value={model} onChange={(e) => { setModel(e.target.value); logUi("change_setting", { field: "model", value: e.target.value }); }}>
             <option value="mock">Mock (instant)</option>
-            <option value="openai">Llama / GPT (OpenAI-compatible)</option>
-            <option value="anthropic">Claude (needs key)</option>
-            <option value="gemini">Gemini (needs key)</option>
-            <option value="deepseek">DeepSeek (needs key)</option>
+            <option value="openai">Llama (local)</option>
             <option value="gemma">Gemma (local)</option>
             <option value="mistral">Mistral-Nemo (local)</option>
             <option value="deepseek_r1">DeepSeek-R1 (local)</option>
+            <option value="anthropic">Claude (needs key)</option>
+            <option value="gemini">Gemini (needs key)</option>
+            <option value="deepseek">DeepSeek (needs key)</option>
           </select>
         </label>
         {submitLabel && <button className="btn-primary" onClick={onSubmit} disabled={busy}>{submitLabel}</button>}
