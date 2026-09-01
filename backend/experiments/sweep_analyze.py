@@ -31,7 +31,7 @@ from .plots import grouped_bar_svg, html_report, stacked_bar_svg, table_html
 PROVIDER_ORDER = ["openai", "gemma", "mistral", "deepseek_r1", "gemini", "deepseek", "anthropic"]
 PROVIDER_LABEL = {"openai": "Llama 3.1 8B", "gemma": "Gemma 4",
                   "mistral": "Mistral-Nemo", "deepseek_r1": "DeepSeek-R1 14B",
-                  "gemini": "Gemini 2.5 Flash", "deepseek": "DeepSeek-V3",
+                  "gemini": "Gemini 3.6 Flash", "deepseek": "DeepSeek-V3",
                   "anthropic": "Claude Opus 4.8"}
 
 # Static deployment metadata. Local footprints are the Ollama GGUF sizes (a good
@@ -114,10 +114,19 @@ def analyze_provider(rows: list[dict], max_regen: int) -> dict:
     walls = sorted(r["wall_ms"] for r in usable if "wall_ms" in r)
     median_ms = walls[len(walls) // 2] if walls else 0
     mean_ms = (sum(walls) / len(walls)) if walls else 0
+    # Per-attempt (per generate->verify cycle) time. wall_ms covers the whole loop;
+    # attempts per problem = rejected rounds + (1 accepted round if delivered). This
+    # gives the average cost of one regeneration cycle without per-round timestamps.
+    total_wall = sum(r["wall_ms"] for r in usable if "wall_ms" in r)
+    total_attempts = sum(len(r.get("rounds", [])) + (1 if r.get("accepted") else 0)
+                         for r in usable if "wall_ms" in r)
+    regens = [r.get("regen_count", 0) for r in delivered]
     return {
         "usable": n, "errors": errors,
         "median_seconds": round(median_ms / 1000, 1),
         "mean_seconds": round(mean_ms / 1000, 1),
+        "seconds_per_attempt": round(total_wall / total_attempts / 1000, 1) if total_attempts else 0.0,
+        "mean_regenerations": round(sum(regens) / len(regens), 2) if regens else 0.0,
         "total_minutes": round(sum(walls) / 60000, 1),
         "first_pass_validity": round(first_pass / n, 4) if n else 0.0,
         "post_loop_validity": round(len(delivered) / n, 4) if n else 0.0,
@@ -260,6 +269,8 @@ def run(root: Path) -> dict:
             "errors_intercepted": results[p]["errors_intercepted"],
             "median_seconds": results[p]["median_seconds"],
             "mean_seconds": results[p]["mean_seconds"],
+            "seconds_per_attempt": results[p]["seconds_per_attempt"],
+            "mean_regenerations": results[p]["mean_regenerations"],
             "by_track": results[p]["by_track"],   # math vs physics single-shot/closed-loop
             "budget_curve": results[p]["budget_curve"],
         } for p in provs},

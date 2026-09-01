@@ -95,36 +95,71 @@ def classify_quota(exc: Exception) -> tuple[str, float | None, str | None]:
 
 
 def _grid(seed: int) -> list[tuple[str, int]]:
-    """All (skill, difficulty) cells in DIFFICULTY-MAJOR (round-robin) order.
+    """All (skill, difficulty) cells in a diagonal order balanced on BOTH axes.
 
-    Every skill appears once at difficulty 1 before any appears at 2, so a
-    partial run of n < full still covers all skills (and both domains) — a
-    skill-major order would spend the first ~45 cells entirely on math and never
-    reach physics. Rotated by seed for varied sampling order.
+    Steps skill and difficulty together: cell k = (skills[k mod S], diff[k mod 5]).
+    When S (the skill count) and 5 are coprime this visits every (skill, difficulty)
+    pair once before repeating, and — crucially — ANY prefix of length n is spread
+    across all difficulties (~n/5 each) AND all skills (~n/S each). So a partial
+    run stays comparable to the full grid instead of piling onto the easy end
+    (difficulty-major) or one domain (skill-major). Rotated by seed.
+
+    If S and 5 share a factor the diagonal would miss some pairs; fall back to a
+    difficulty-major fill for the cells it misses so the full grid is still exact.
     """
     skills = all_skills()
-    cells = [(skills[i % len(skills)], DIFFICULTIES[(i // len(skills)) % len(DIFFICULTIES)])
-             for i in range(len(skills) * len(DIFFICULTIES))]
+    s = len(skills)
+    total = s * len(DIFFICULTIES)
+    seen: set[tuple[str, int]] = set()
+    cells: list[tuple[str, int]] = []
+    for k in range(total):
+        cell = (skills[k % s], DIFFICULTIES[k % len(DIFFICULTIES)])
+        if cell not in seen:
+            seen.add(cell)
+            cells.append(cell)
+    if len(cells) < total:  # coprime failed (S divisible by 5): append the rest
+        for sk in skills:
+            for d in DIFFICULTIES:
+                if (sk, d) not in seen:
+                    cells.append((sk, d))
     off = seed % len(cells)
     return cells[off:] + cells[:off]
 
 
 def run(provider_name: str, n: int, max_regen: int, seed: int, outdir: Path,
-        use_semantic: bool = True) -> dict:
+        use_semantic: bool = True, resume: bool = False) -> dict:
     provider = get_provider(provider_name)
     prov_dir = outdir / provider_name
     prov_dir.mkdir(parents=True, exist_ok=True)
     log_path = prov_dir / "attempts.jsonl"
-    logf = log_path.open("w")
+
+    delivered = first_pass = usable = errors = 0
+    start_i = 0
+    # Resume: keep the rows already on disk, re-seed the running counters from
+    # them, and continue at the next grid cell (append, don't truncate).
+    if resume and log_path.exists():
+        prior = [json.loads(l) for l in log_path.open() if l.strip()]
+        start_i = len(prior)
+        for r in prior:
+            if "error" in r:
+                errors += 1
+                continue
+            usable += 1
+            if r.get("accepted"):
+                delivered += 1
+                if r.get("regen_count", 0) == 0:
+                    first_pass += 1
+        print(f"[{provider_name}] resuming at problem {start_i}/{n} "
+              f"({usable} usable, {errors} errors already on disk)", flush=True)
+    logf = log_path.open("a" if start_i else "w")
 
     cells = _grid(seed)
     skills = all_skills()
-    delivered = first_pass = usable = errors = 0
     consecutive_429 = 0
     circuit_broken: dict | None = None
     t0 = time.time()
 
-    for i in range(n):
+    for i in range(start_i, n):
         skill, difficulty = cells[i % len(cells)]
         domain = domain_of(skill)
         # Skill vector is irrelevant here (we override the plan), but the loop
@@ -233,9 +268,11 @@ def main() -> None:
     ap.add_argument("--outdir", required=True)
     ap.add_argument("--no-semantic", action="store_true",
                     help="skip the advisory LLM clarity check (halves API calls per problem)")
+    ap.add_argument("--resume", action="store_true",
+                    help="continue an interrupted run: keep existing rows and pick up at the next cell")
     args = ap.parse_args()
     run(args.provider, args.n, args.max_regen, args.seed, Path(args.outdir),
-        use_semantic=not args.no_semantic)
+        use_semantic=not args.no_semantic, resume=args.resume)
 
 
 if __name__ == "__main__":
