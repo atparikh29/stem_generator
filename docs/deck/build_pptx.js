@@ -168,7 +168,7 @@ s.addNotes("The LLM's only verification role is an advisory clarity score. All c
 s=p.addSlide(); bg(s,PAPER);
 eyebrow(s,"System & Scope");
 title(s,"Offline-first, model-agnostic, verifiably seeded.",{size:29});
-const scg=[["8","LLM backends","Llama, GPT, Gemma, Mistral, DeepSeek (V3 + R1) and Gemini speak the OpenAI-compatible API; Claude uses Anthropic's — one interface. An offline mock oracle also stands in with no keys or network."],
+const scg=[["8","LLM backends","Llama, GPT, Gemma, Mistral, DeepSeek (V3 + R1), Gemini, Claude — plus an offline mock oracle. All behind one interface."],
   ["19","Skills · 3 domains","Precalculus, single-variable Calculus, AP Physics 1."],
   ["1,226","Pre-verified problems","An offline mock oracle seeds a bank where every item passed the full verifier."],
   ["1D·2D·rot","Physics coverage","Projectile, incline, torque, rotational kinematics & dynamics — difficulty 1–5."]];
